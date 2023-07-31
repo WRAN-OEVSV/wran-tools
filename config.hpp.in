@@ -1,0 +1,15 @@
+/*
+ * SPDX-FileCopyrightText: 2023 Roland Schwarz <roland.schwarz@blackspace.at>
+ * SPDX-License-Identifier: GPL-3.0-or-later
+*/
+
+#ifndef CONFIG_HPP
+#define CONFIG_HPP
+
+#define PROJECT_NAME "@PROJECT_NAME@"
+#define PROJECT_VER  "@PROJECT_VERSION@"
+#define PROJECT_VER_MAJOR "@PROJECT_VERSION_MAJOR@"
+#define PROJECT_VER_MINOR "@PROJECT_VERSION_MINOR@"
+#define PTOJECT_VER_PATCH "@PROJECT_VERSION_PATCH@"
+
+#endif // CONFIG_HPP
