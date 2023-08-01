@@ -39,6 +39,13 @@ using std::acos;
 using std::cos;
 using std::sin;
 
+#include <complex>
+using std::complex;
+using std::exp;
+using std::conj;
+
+using namespace std::literals::complex_literals;
+
 #include <chrono>
 using std::chrono::high_resolution_clock;
 using namespace std::literals::chrono_literals;
@@ -143,7 +150,6 @@ int main(int argc, char* argv[])
     double freq      = vm["freq"].as<double>();
     double gain      = vm["gain"].as<double>();
     double tone      = vm["tone"].as<double>();
-    double tone_rel  = tone/samp_rate;
 
     LMS_EnableChannel(dev, LMS_CH_TX, 0, true);
     LMS_SetSampleRate(dev, samp_rate, 0);
@@ -154,31 +160,36 @@ int main(int argc, char* argv[])
 
     lms_stream_t tx_stream;
     tx_stream.channel = 0;
-    tx_stream.fifoSize = 256*4096;//256*1024;
+    tx_stream.fifoSize = 256*1024;
     tx_stream.throughputVsLatency = 0.5;
     tx_stream.dataFmt = lms_stream_t::LMS_FMT_F32;
     tx_stream.isTx = true;
     LMS_SetupStream(dev, &tx_stream);
 
-    const int buffer_size = 4096*8;//1024*8;
-    float tx_buffer[2*buffer_size];
-    for (int i=0; i < buffer_size; ++i) {
-        const double pi = acos(-1);
-        double w = 2*pi*i*tone_rel;
-        tx_buffer[2*i]  = cos(w);
-        tx_buffer[2*i+1] = sin(w);
-        //tx_buffer[2*i+1] = 0.0;
-    }
-    const int send_cnt = int(buffer_size*tone_rel) / tone_rel;
+    const int buffer_size = 1024*4;
+    complex<float> tx_buffer[buffer_size];
+
+    // The oscillator is implemented by rotation of a complex<double>
+    // to lower the noise floor.
+    // Phase increment per step:
+    complex<double> w = exp(2.0i*acos(-1)*tone/samp_rate);
+    // Initialize the oscillator:
+    complex<double> y = conj(w);
+
+    // initialize the buffer
+    for (size_t n = 0; n<buffer_size; ++n)
+        tx_buffer[n] = exp(2.0i*acos(-1)*tone/samp_rate*double(n));
 
     LMS_StartStream(&tx_stream);
 
     auto t1 = high_resolution_clock::now();
     auto t2 = t1;
     while (high_resolution_clock::now() - t1 < 600s && SIGINT != signal_status) {
-        int ret = LMS_SendStream(&tx_stream, tx_buffer, send_cnt, nullptr, 1000);
-        if (ret != send_cnt)
-          cerr << "Error: samples sent: " << ret << "/" << send_cnt << endl;
+        // Fill the buffer with new oscillator values
+        for (size_t n = 0; n<buffer_size; ++n)  tx_buffer[n] = (y*=w);
+        int ret = LMS_SendStream(&tx_stream, tx_buffer, buffer_size, nullptr, 1000);
+        if (ret != buffer_size)
+          cerr << "Error: samples sent: " << ret << "/" << buffer_size << endl;
         if (high_resolution_clock::now()-t2 > 1s) {
             t2 = high_resolution_clock::now();
             lms_stream_status_t status;
