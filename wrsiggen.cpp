@@ -129,7 +129,7 @@ int main(int argc, char* argv[])
     lms_info_str_t list[8];
     int n = LMS_GetDeviceList(list);
     if (n < 1) lime::error("No device found");
-    cout << "Found device: " << list[0] << endl;
+    lime::info("Device: %s", list[0]);
 
     lms_device_t* dev = nullptr;
     LMS_Open(&dev, list[0], nullptr);
@@ -155,6 +155,7 @@ int main(int argc, char* argv[])
     LMS_SetSampleRate(dev, samp_rate, 0);
     LMS_SetLOFrequency(dev, LMS_CH_TX, 0, freq);
     LMS_SetAntenna(dev, LMS_CH_TX, 0, LMS_PATH_TX2);
+    //LMS_SetLPFBW(dev, LMS_CH_TX, 0, 5e6);
     LMS_SetNormalizedGain(dev, LMS_CH_TX, 0, gain);
     LMS_Calibrate(dev, LMS_CH_TX, 0, samp_rate, 0);
 
@@ -170,7 +171,7 @@ int main(int argc, char* argv[])
     complex<float> tx_buffer[buffer_size];
 
     // The oscillator is implemented by rotation of a complex<double>
-    // to lower the noise floor.
+    // to lower the noise floor compared to the basic example.
     // Phase increment per step:
     complex<double> w = exp(2.0i*acos(-1)*tone/samp_rate);
     // Initialize the oscillator:
@@ -190,7 +191,7 @@ int main(int argc, char* argv[])
         int ret = LMS_SendStream(&tx_stream, tx_buffer, buffer_size, nullptr, 1000);
         if (ret != buffer_size)
           cerr << "Error: samples sent: " << ret << "/" << buffer_size << endl;
-        if (high_resolution_clock::now()-t2 > 1s) {
+        if (high_resolution_clock::now()-t2 > 10s) {
             t2 = high_resolution_clock::now();
             lms_stream_status_t status;
             LMS_GetStreamStatus(&tx_stream, & status);
