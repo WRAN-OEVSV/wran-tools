@@ -54,6 +54,9 @@ using namespace std::literals::chrono_literals;
 using std::sig_atomic_t;
 using std::signal;
 
+#include <vector>
+using std::vector;
+
 #include <boost/format.hpp>
 using boost::format;
 using boost::str;
@@ -126,8 +129,9 @@ int main(int argc, char* argv[])
     cout << "Hint: press Ctrl-C if you want to abort before 10 minutes expired." << endl;
     cout << endl;
 
-    lms_info_str_t list[8];
-    int n = LMS_GetDeviceList(list);
+    vector<lms_info_str_t> list(LMS_GetDeviceList(nullptr));
+    if (list.empty()) lime::error("No device list found");
+    int n = LMS_GetDeviceList(list.data());
     if (n < 1) lime::error("No device found");
     lime::info("Device: %s", list[0]);
 
