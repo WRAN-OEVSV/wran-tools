@@ -101,6 +101,7 @@ int main(int argc, char* argv[])
     cxxopts::Options options("wrsiggen", "WRAN signal generator tool.");
     options.add_options()
         ("h,help", "Print usage information.")
+        ("version", "Print version.")
         ("mode", "TXwoBP, TX6m, TX2m, TX70cm", cxxopts::value<string>()->default_value("TXwoBP"))
         ("freq", "Center frequency.", cxxopts::value<double>()->default_value("53e6"))
         ("gain", "Gain factor 0 ... 1.0", cxxopts::value<double>()->default_value("0.7"))
@@ -117,6 +118,10 @@ int main(int argc, char* argv[])
         return EXIT_SUCCESS;
     }
 
+    if (vm.count("version")) {
+        cout <<PROJECT_VER << endl;
+        return EXIT_SUCCESS;
+    }
 
     if (1 != gpio_map.count(vm["mode"].as<string>()))
       throw runtime_error(str(format("%s is an invalid mode") % vm["mode"].as<string>()));

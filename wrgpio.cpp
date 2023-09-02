@@ -34,6 +34,7 @@ using std::endl;
 
 #include <string>
 using std::string;
+using std::getline;
 
 #include <exception>
 using std::exception;
@@ -67,7 +68,7 @@ int main() {
 
   try {
 
-    cout << "WRAN GPIO tool." << endl;
+    cout << "WRAN GPIO tool. Version " PROJECT_VER << endl;
 
     lms_info_str_t list[8];
     int n = LMS_GetDeviceList(list);
