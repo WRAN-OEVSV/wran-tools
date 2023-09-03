@@ -17,8 +17,8 @@ At the moment programs
 
 * **wrgpio** for controlling of the GPIO pins located at LimeSDR Mini and
 * **wrsiggen** a program to generate a sinus signal
-* **wrbeacon** a program that evenually shall generate a beacon.
-* 
+* **wrbeacon** a program that eventually shall generate a beacon.
+
 are available. The programs are intended for use with the LimeSDR Mini v2.2, 
 but might work with the Lime Mini 1.
 
