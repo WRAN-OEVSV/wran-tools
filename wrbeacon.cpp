@@ -4,12 +4,13 @@
 */
 
 /*
- * A tool for testing the signal paths of the WRAN box. The local oszillator
- * frequency, the band filters, the gain, and a amplitude modulation tone can
- * be set.
+ * A tool for generating a beacon signal as defined by the work of Marek Honek
+ * in his master thesis: SDR OFDM Frame Generation according to IEEE 802.22.
+ * https://doi.org/10.34726/hss.2022.74390
  */
 
 #include "config.hpp"
+#include "frame.hpp"
 
 #include <cxxopts.hpp>
 
@@ -30,6 +31,9 @@ using std::exception;
 
 #include <map>
 using std::map;
+
+#include <initializer_list>
+using std::initializer_list;
 
 #include <cmath>
 using std::acos, std::cos, std::sin;
@@ -98,25 +102,57 @@ namespace {
 
 }
 
-//atomic<uint64_t> timestamp;
-const uint16_t samples_per_frame = 33280;
-const uint16_t frames_per_second = 100;
+// define various read only system parameters
+//const uint16_t frames_per_second =   100; // i.e. 10 msec frame rep. rate
+//const uint16_t subcarriers       =  1024;
+//const uint16_t datacarriers      =   480;
 
+// some global shared variables for use by the threads
+//atomic<uint32_t> samples_per_frame = 0;
+atomic<uint64_t> rx_timestamp      = 0; // latest timestamp from rx, we know of
+atomic<size_t>   cpfxs             = 0; // cyclic prefix shift: prefix len is: subcarriers >> cpfs
+atomic<size_t>   phymode           = 0; // physical layer mode;
 
-// The transmit thread.
+// this is a hack, proper implementation pending
+string global_message;
+
+// map prefix shift to samples per frame
+//const uint32_t cpfxs_to_spf[] =
+//  {0, 0, 33280, 32256, 32640, 32736};
+
+// Note: LMS_SendStream and LMS_RecvStream are the ONLY thread safe functions
+// of limesuite.
+// The transmit thread:
 void transmit(stop_token stoken, lms_stream_t& tx_stream, uint64_t start_time) {
 
-  vector<complex<float>> tx_buffer(3328);
-  uint64_t timestamp = start_time;
-  complex<double> w = exp(2i*Pi*0.001);
-  complex<double> osz = conj(w);
+  string message = global_message; // I know this is unproteced
+  unsigned char header[8] = {0,0,0,0,0,0,0,0};
+
+  framegenerator fg(cpfxs, phymode);
+  uint32_t samp_per_frame = framegenerator::spfxs_prop[cpfxs].samp_per_frame;
+
+  vector<complex<float>> tx_buffer(fg.subcarriers + (fg.subcarriers >> cpfxs));
+  uint64_t tx_timestamp = start_time;
   lms_stream_meta_t meta;
 
+  //  complex<double> w = exp(2i*Pi*0.001);
+  //  complex<double> osz = conj(w);
+
   while(!stoken.stop_requested()) {
-      for (size_t m=0; m<tx_buffer.size(); ++m) tx_buffer[m] = (osz*=w);
-      timestamp += samples_per_frame;
-      meta.timestamp = timestamp;
+//      for (size_t m=0; m<tx_buffer.size(); ++m) tx_buffer[m] = (osz*=w);
+      fg.assemble(header, reinterpret_cast<unsigned char*>(message.data()), message.size());
+      bool last = fg.write(tx_buffer.data(), tx_buffer.size());
+      tx_timestamp += samp_per_frame;
+      meta.timestamp = tx_timestamp;
       meta.waitForTimestamp = true;
+      if (not last) {
+          LMS_SendStream(&tx_stream, tx_buffer.data(), tx_buffer.size(), &meta, 1000);
+          // TODO: I do not yet understand the write function. The documentaion and source of
+          // liquid look incomplete.
+          last = fg.write(tx_buffer.data(), tx_buffer.size());
+          meta.waitForTimestamp = false;
+          meta.flushPartialPacket = false;
+      }
       meta.flushPartialPacket = true;
       LMS_SendStream(&tx_stream, tx_buffer.data(), tx_buffer.size(), &meta, 1000);
   }
@@ -124,16 +160,20 @@ void transmit(stop_token stoken, lms_stream_t& tx_stream, uint64_t start_time) {
   cout << "Transmit thread stopping." << endl;
 }
 
-// The receive thread
+// The receive thread:
 void receive(stop_token stoken, lms_stream_t& rx_stream, lms_stream_t& tx_stream) {
   vector<complex<float>> rx_buffer(1024*4);
   lms_stream_meta_t meta;
-  LMS_RecvStream(&rx_stream, rx_buffer.data(), rx_buffer.size(), &meta, 1000);
+  int ret = LMS_RecvStream(&rx_stream, rx_buffer.data(), rx_buffer.size(), &meta, 1000);
   jthread tx_thread(transmit, ref(tx_stream), meta.timestamp);
+  rx_timestamp = meta.timestamp +  ret;
+
   while(!stoken.stop_requested()) {
-      LMS_RecvStream(&rx_stream, rx_buffer.data(), rx_buffer.size(), &meta, 1000);
-      // The receive thread does nothing but transfer the samples yet.
+      ret = LMS_RecvStream(&rx_stream, rx_buffer.data(), rx_buffer.size(), &meta, 1000);
+      rx_timestamp = meta.timestamp + ret;
+      // The receive thread does not do much yet, but fetch samples and update time.
   }
+
   cout << "Receive thread stopping." << endl;
   tx_thread.request_stop();
   tx_thread.join();
@@ -158,9 +198,12 @@ int main(int argc, char* argv[])
         ("version", "Print version.")
         ("freq", "Center frequency.", cxxopts::value<double>()->default_value("53e6"))
         ("gain", "Gain factor 0 ... 1.0", cxxopts::value<double>()->default_value("0.7"))
+        ("cpfxs", "Cyclic prefix len is: subcarriers shr cpfs.", cxxopts::value<size_t>()->default_value(("2")))
+        ("phymode", "Physical layer mode: 1 ... 14", cxxopts::value<size_t>()->default_value("1"))
+        ("message", "Beacon message", cxxopts::value<string>()->default_value("OE1XTU"));
         ;
-    options.parse_positional({"freq", "gain"});
-    options.positional_help("freq gain");
+    options.parse_positional({"message"});
+    options.positional_help("message");
     options.show_positional_help();
 
     auto vm = options.parse(argc, argv);
@@ -175,9 +218,31 @@ int main(int argc, char* argv[])
         return EXIT_SUCCESS;
     }
 
+    // copy to global variable, this is preliminary and will be replaced
+    // TODO: replace by message queue
+    global_message = vm["message"].as<string>();
+
+    cpfxs = vm["cpfxs"].as<size_t>();
+    if (2 > cpfxs or cpfxs > 5)
+      throw runtime_error("prefix shift not in range 2 .. 5");
+
+    //samples_per_frame = cpfxs_to_spf[cpfxs];
+
+    phymode = vm["phymode"].as<size_t>();
+    if (0 == phymode or phymode > 14)
+      throw runtime_error("invalid phymode requested");
+
+    double samp_rate  = framegenerator::spfxs_prop[cpfxs].samp_per_frame
+                        * framegenerator::frames_per_second;
+    double band_width = samp_rate;
+    double freq       = vm["freq"].as<double>();
+    double gain       = vm["gain"].as<double>();
+
     cout << "wrbeacon parameters:" << endl;
-    cout << format("Freq: %5.1f MHz\n") % (1e-6*vm["freq"].as<double>());
-    cout << format("Gain: %0.3f\n") % vm["gain"].as<double>();
+    cout << format("Freq:       %4.01f      MHz\n") % (1e-6*vm["freq"].as<double>());
+    cout << format("Gain:       %5.02f \n")         % vm["gain"].as<double>();
+    cout << format("Prefix shift:   %2d\n")         % cpfxs;
+    cout << format("Samplerate: %9.06f MHz\n")      % samp_rate;
     cout << endl;
 
     lms_info_str_t list[8];
@@ -188,10 +253,6 @@ int main(int argc, char* argv[])
     LMS_Open(&dev, list[0], nullptr);
     LMS_Init(dev);
 
-    double samp_rate  = samples_per_frame*frames_per_second;
-    double band_width = samp_rate;
-    double freq       = vm["freq"].as<double>();
-    double gain       = vm["gain"].as<double>();
 
     // Set up GPIO.
     uint8_t gpio_dir = 0xFF;
@@ -249,11 +310,14 @@ int main(int argc, char* argv[])
     tx_stream.channel = 0;
     tx_stream.fifoSize = 256*1024;
     tx_stream.throughputVsLatency = 0.5;
+    assert(8*sizeof(float) == 32);
     tx_stream.dataFmt = lms_stream_t::LMS_FMT_F32;
     tx_stream.isTx = true;
     LMS_SetupStream(dev, &tx_stream);
 
     LMS_StartStream(&tx_stream);
+
+    // start the threads
     jthread rx_thread(receive, ref(rx_stream), ref(tx_stream));
     // transmit is started from inside receive thread
 

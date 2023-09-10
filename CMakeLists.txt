@@ -12,9 +12,13 @@ project(wran-tools
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Make sure our local CMake Modules path comes first.
+list(INSERT CMAKE_MODULE_PATH 0 ${PROJECT_SOURCE_DIR}/cmake/Modules)
+
 find_package(CxxOpts   REQUIRED)
 find_package(Boost     REQUIRED COMPONENTS system)
 find_package(LimeSuite REQUIRED)
+find_package(LiquidDSP REQUIRED)
 
 configure_file(config.hpp.in config.hpp @ONLY)
 include_directories(${PROJECT_BINARY_DIR})
@@ -49,6 +53,8 @@ target_link_libraries(wrgpio
 )
 
 target_sources(wrbeacon PRIVATE
+  frame.hpp
+  frame.cpp
   wrbeacon.cpp
   config.hpp.in
 )
@@ -56,6 +62,7 @@ target_sources(wrbeacon PRIVATE
 target_link_libraries(wrbeacon
   PRIVATE
   LimeSuite
+  LiquidDSP
 )
 
 install(TARGETS
