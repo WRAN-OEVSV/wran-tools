@@ -23,6 +23,9 @@ using std::size;
 #include <iostream>
 using std::cout, std::cerr, std::clog, std::cin, std::endl;
 
+#include <fstream>
+using std::ofstream;
+
 #include <stdexcept>
 using std::runtime_error;
 
@@ -103,23 +106,14 @@ namespace {
 
 }
 
-// define various read only system parameters
-//const uint16_t frames_per_second =   100; // i.e. 10 msec frame rep. rate
-//const uint16_t subcarriers       =  1024;
-//const uint16_t datacarriers      =   480;
 
 // some global shared variables for use by the threads
-//atomic<uint32_t> samples_per_frame = 0;
 atomic<uint64_t> rx_timestamp      = 0; // latest timestamp from rx, we know of
 atomic<size_t>   cpfxs             = 0; // cyclic prefix shift: prefix len is: subcarriers >> cpfs
 atomic<size_t>   phymode           = 0; // physical layer mode;
 
 // this is a hack, proper implementation pending
 string global_message;
-
-// map prefix shift to samples per frame
-//const uint32_t cpfxs_to_spf[] =
-//  {0, 0, 33280, 32256, 32640, 32736};
 
 // Note: LMS_SendStream and LMS_RecvStream are the ONLY thread safe functions
 // of limesuite.
@@ -143,17 +137,21 @@ void transmit(stop_token stoken, lms_stream_t& tx_stream, uint64_t start_time) {
           sleep_for(10us); // In a bidirectionional setting waiting here could
                            // be replaced by transmit data preparation.
         }
+
       if (not stoken.stop_requested()) {
           fg.assemble(header, reinterpret_cast<unsigned char*>(message.data()), message.size());
           bool last = fg.write(tx_buffer.data(), tx_buffer.size());
-
+          // The amplitude as generated overdrives the LimSDR resulting in
+          // splatter. The optimum scals factor needs to be determined.
+          for (size_t i=0; i < tx_buffer.size(); ++i) tx_buffer[i] *= 0.25;
           meta.timestamp = tx_timestamp;
-          meta.waitForTimestamp = true;
+          meta.waitForTimestamp = false;//true;
           while (not last) {
               LMS_SendStream(&tx_stream, tx_buffer.data(), tx_buffer.size(), &meta, 1000);
-              // TODO: I do not yet understand the write function.
+              // TODO: I do not yet understand the write function completely.
               // The documentaion and source of liquid appear incomplete.
               last = fg.write(tx_buffer.data(), tx_buffer.size());
+              for (size_t i=0; i < tx_buffer.size(); ++i) tx_buffer[i] *= 0.25;
               meta.waitForTimestamp = false;
               meta.flushPartialPacket = false;
             }
@@ -259,7 +257,6 @@ int main(int argc, char* argv[])
 
     LMS_Open(&dev, list[0], nullptr);
     LMS_Init(dev);
-
 
     // Set up GPIO.
     uint8_t gpio_dir = 0xFF;

@@ -15,9 +15,21 @@ using std::complex;
 
 const size_t framegenerator::frames_per_second =  100;
 const size_t framegenerator::subcarriers       = 1024;
-const size_t framegenerator::guards            =  232;
-const size_t framegenerator::pilotfrac         =    7;
-const size_t framegenerator::datacarriers      =  480;
+
+const size_t framegenerator::guards            =  232; //400;
+const size_t framegenerator::pilotfrac         =    7; //8;
+const size_t framegenerator::datacarriers      =  480; // 196;
+
+//const size_t framegenerator::guards            =  400;
+//const size_t framegenerator::pilotfrac         =    8;
+//const size_t framegenerator::datacarriers      =  196;
+
+//const size_t framegenerator::guards            =  500;
+//const size_t framegenerator::pilotfrac         =    2;
+//const size_t framegenerator::datacarriers      =   12;
+
+
+// (subcarriers - 2*guard)*(1-1/pilotfrac) == datacarriers
 
 const framegenerator::phy_t framegenerator::phy_prop[] =
 {
@@ -68,19 +80,20 @@ framegenerator::framegenerator(size_t cpfxs, size_t phymode) {
   assert(datacarriers == ((subcarriers - 2*guards)*(pilotfrac-1))/pilotfrac);
 
   for (size_t i = 0;                  i < guards;             ++i)
-    sca[i] = OFDMFRAME_SCTYPE_NULL; // guard band
-
+      sca[(i+subcarriers/2) % subcarriers] = OFDMFRAME_SCTYPE_NULL; // guard band
   for (size_t i = guards;             i < subcarriers-guards; ++i)
-    sca[i] = (0 == i%pilotfrac)? OFDMFRAME_SCTYPE_PILOT :  OFDMFRAME_SCTYPE_DATA;
-
+      sca[(i+subcarriers/2) % subcarriers] = (0 == i%pilotfrac)? OFDMFRAME_SCTYPE_PILOT :  OFDMFRAME_SCTYPE_DATA;
   for (size_t i = subcarriers-guards; i < subcarriers;        ++i)
-    sca[i] = OFDMFRAME_SCTYPE_NULL; // guard_band]
+      sca[(i+subcarriers/2) % subcarriers] = OFDMFRAME_SCTYPE_NULL; // guard_band]
 
   fg = ofdmflexframegen_create(subcarriers, cp_len, taper_len, sca, &fgp);
+  //ofdmflexframegen_print(fg);
+  ofdmframe_print_sctype(sca, subcarriers);
 }
 
 void framegenerator::assemble(const unsigned char* header, const unsigned char* payload, size_t payload_len) {
   ofdmflexframegen_assemble(fg, header, payload, payload_len);
+  //ofdmflexframegen_print(fg);
 }
 
 bool framegenerator::write(complex<float>* buffer, size_t buffer_len) {
