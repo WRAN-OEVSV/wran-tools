@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 cmake_minimum_required(VERSION 3.5)
+cmake_policy(VERSION 3.5...3.27)
 
 project(wran-tools
   VERSION 0.2.0

@@ -52,6 +52,7 @@ using std::sig_atomic_t, std::signal;
 
 #include <thread>
 using std::jthread, std::stop_token;
+using std::this_thread::sleep_for;
 
 #include <mutex>
 using std::mutex;
@@ -135,27 +136,31 @@ void transmit(stop_token stoken, lms_stream_t& tx_stream, uint64_t start_time) {
   uint64_t tx_timestamp = start_time;
   lms_stream_meta_t meta;
 
-  //  complex<double> w = exp(2i*Pi*0.001);
-  //  complex<double> osz = conj(w);
-
   while(!stoken.stop_requested()) {
-//      for (size_t m=0; m<tx_buffer.size(); ++m) tx_buffer[m] = (osz*=w);
-      fg.assemble(header, reinterpret_cast<unsigned char*>(message.data()), message.size());
-      bool last = fg.write(tx_buffer.data(), tx_buffer.size());
       tx_timestamp += samp_per_frame;
-      meta.timestamp = tx_timestamp;
-      meta.waitForTimestamp = true;
-      if (not last) {
+      while(not stoken.stop_requested()
+            and rx_timestamp + samp_per_frame/2 < tx_timestamp) {
+          sleep_for(10us); // In a bidirectionional setting waiting here could
+                           // be replaced by transmit data preparation.
+        }
+      if (not stoken.stop_requested()) {
+          fg.assemble(header, reinterpret_cast<unsigned char*>(message.data()), message.size());
+          bool last = fg.write(tx_buffer.data(), tx_buffer.size());
+
+          meta.timestamp = tx_timestamp;
+          meta.waitForTimestamp = true;
+          while (not last) {
+              LMS_SendStream(&tx_stream, tx_buffer.data(), tx_buffer.size(), &meta, 1000);
+              // TODO: I do not yet understand the write function.
+              // The documentaion and source of liquid appear incomplete.
+              last = fg.write(tx_buffer.data(), tx_buffer.size());
+              meta.waitForTimestamp = false;
+              meta.flushPartialPacket = false;
+            }
+          meta.flushPartialPacket = true;
           LMS_SendStream(&tx_stream, tx_buffer.data(), tx_buffer.size(), &meta, 1000);
-          // TODO: I do not yet understand the write function. The documentaion and source of
-          // liquid look incomplete.
-          last = fg.write(tx_buffer.data(), tx_buffer.size());
-          meta.waitForTimestamp = false;
-          meta.flushPartialPacket = false;
-      }
-      meta.flushPartialPacket = true;
-      LMS_SendStream(&tx_stream, tx_buffer.data(), tx_buffer.size(), &meta, 1000);
-  }
+        }
+    }
 
   cout << "Transmit thread stopping." << endl;
 }
@@ -174,7 +179,8 @@ void receive(stop_token stoken, lms_stream_t& rx_stream, lms_stream_t& tx_stream
       // The receive thread does not do much yet, but fetch samples and update time.
   }
 
-  cout << "Receive thread stopping." << endl;
+  cout << "Receive thread stopping."  << endl;
+
   tx_thread.request_stop();
   tx_thread.join();
 }
@@ -221,6 +227,7 @@ int main(int argc, char* argv[])
     // copy to global variable, this is preliminary and will be replaced
     // TODO: replace by message queue
     global_message = vm["message"].as<string>();
+    //for (size_t n=0; n<100; ++n) global_message += "c"; // Test different msg len.
 
     cpfxs = vm["cpfxs"].as<size_t>();
     if (2 > cpfxs or cpfxs > 5)
@@ -277,7 +284,7 @@ int main(int argc, char* argv[])
     LMS_WriteFPGAReg(dev, 0x0010, fpga_val);
 
     // TXANT_POST
-    fpga_val = static_cast<uint16_t>(11.5e-6*samp_rate);;
+    fpga_val = static_cast<uint16_t>(11.5e-6*samp_rate);
     LMS_WriteFPGAReg(dev, 0x0011, fpga_val);
 
     LMS_SetSampleRate(dev,     samp_rate, 0);
@@ -291,7 +298,7 @@ int main(int argc, char* argv[])
 
     lms_stream_t rx_stream;
     rx_stream.channel = 0;
-    rx_stream.fifoSize = 256*1024;
+    rx_stream.fifoSize = 1024;
     rx_stream.throughputVsLatency = 0.5;
     rx_stream.dataFmt = lms_stream_t::LMS_FMT_F32;
     rx_stream.isTx = false;
