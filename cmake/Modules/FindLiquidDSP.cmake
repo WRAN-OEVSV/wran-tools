@@ -46,10 +46,24 @@ find_path(LiquidDSP_INCLUDE_DIR
 
 find_library(LiquidDSP_LIBRARY
   NAMES liquid
-  PATHS ${PC_LiquidDSP_LIBRARY_DIRS}
-        /usr/local/lib
+  PATHS /usr/local/lib
         /usr/lib
 )
+
+find_library(FFTW3_LIBRARY
+  NAMES fftw3f
+  PATHS /usr/local/lib
+        /usr/lib
+)
+
+list(APPEND _LIBRARIES ${FFTW3_LIBRARY})
+
+find_library(fec_LIBRARY
+  NAMES fec
+  PATHS /usr/local/lib
+        /usr/lib
+)
+list(APPEND _LIBRARIES ${fec_LIBRARY})
 
 # Read version from liquid.h include file
 file(STRINGS ${LiquidDSP_INCLUDE_DIR}/liquid.h VERSION_LINE
@@ -76,5 +90,8 @@ if(LiquidDSP_FOUND AND NOT TARGET LiquidDSP)
   set_target_properties(LiquidDSP PROPERTIES
     IMPORTED_LOCATION "${LiquidDSP_LIBRARY}"
     INTERFACE_INCLUDE_DIRECTORIES "${LiquidDSP_INCLUDE_DIR}"
+    INTERFACE_LINK_LIBRARIES "${_LIBRARIES}"
   )
 endif()
+
+unset(_LIBRARIES)

@@ -18,23 +18,53 @@ list(INSERT CMAKE_MODULE_PATH 0 ${PROJECT_SOURCE_DIR}/cmake/Modules)
 
 find_package(CxxOpts   REQUIRED)
 find_package(Boost     REQUIRED COMPONENTS system)
-find_package(LimeSuite REQUIRED)
 find_package(LiquidDSP REQUIRED)
 
 configure_file(config.hpp.in config.hpp @ONLY)
 include_directories(${PROJECT_BINARY_DIR})
 
+add_executable(wrbeacon-sim)
+
+target_sources(wrbeacon-sim PRIVATE
+  hamranfrm.cpp
+  hamranfrm.hpp
+  wrbeacon_sim.cpp
+  config.hpp.in
+)
+
+target_link_libraries(wrbeacon-sim
+  PRIVATE
+  LiquidDSP
+)
+
+add_executable(wrrx-sim)
+
+target_sources(wrrx-sim PRIVATE
+  hamranfrm.cpp
+  hamranfrm.hpp
+  wrrx_sim.cpp
+  config.hpp.in
+)
+
+target_link_libraries(wrrx-sim
+  PRIVATE
+  LiquidDSP
+  Boost::system
+)
+
+install(TARGETS
+  wrbeacon-sim
+  wrrx-sim
+)
+
+find_package(LimeSuite)
+if (LimeSuite_FOUND)
+
 add_executable(wrsiggen)
-add_executable(wrgpio)
-add_executable(wrbeacon)
 
 target_sources(wrsiggen PRIVATE
   wrsiggen.cpp
   config.hpp.in
-)
-
-target_include_directories(wrsiggen PRIVATE
-  Boost::headers
 )
 
 target_link_libraries(wrsiggen
@@ -42,6 +72,8 @@ target_link_libraries(wrsiggen
   Boost::system
   LimeSuite
 )
+
+add_executable(wrgpio)
 
 target_sources(wrgpio PRIVATE
   wrgpio.cpp
@@ -53,9 +85,11 @@ target_link_libraries(wrgpio
   LimeSuite
 )
 
+add_executable(wrbeacon)
+
 target_sources(wrbeacon PRIVATE
-  frame.hpp
-  frame.cpp
+  hamranfrm.cpp
+  hamranfrm.hpp
   wrbeacon.cpp
   config.hpp.in
 )
@@ -71,3 +105,31 @@ install(TARGETS
   wrgpio
   wrbeacon
 )
+
+endif()
+
+
+find_package(rtlsdr)
+if (rtlsdr_FOUND)
+
+add_executable(wrrx-rtl)
+
+target_sources(wrrx-rtl PRIVATE
+  hamranfrm.cpp
+  hamranfrm.hpp
+  wrrx_rtl.cpp
+  config.hpp.in
+)
+
+target_link_libraries(wrrx-rtl
+  PRIVATE
+  LiquidDSP
+  Boost::system
+  rtlsdr::rtlsdr
+)
+
+install(TARGETS wrrx-rtl)
+
+endif()
+
+

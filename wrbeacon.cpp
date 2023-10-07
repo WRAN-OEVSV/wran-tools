@@ -4,13 +4,13 @@
 */
 
 /*
- * A tool for generating a beacon signal as defined by the work of Marek Honek
+ * A tool for generating a beacon signal based on the work of Marek Honek
  * in his master thesis: SDR OFDM Frame Generation according to IEEE 802.22.
- * https://doi.org/10.34726/hss.2022.74390
+ * https://doi.org/10.34726/hss.2022.74390, but heavily adapted by OE1RSA.
  */
 
 #include "config.hpp"
-#include "frame.hpp"
+#include "hamranfrm.hpp"
 
 #include <cxxopts.hpp>
 
@@ -18,7 +18,7 @@
 #include <lime/Logger.h>
 
 #include <cstdlib>
-using std::size;
+using std::size_t;
 
 #include <iostream>
 using std::cout, std::cerr, std::clog, std::cin, std::endl;
@@ -38,17 +38,9 @@ using std::map;
 #include <initializer_list>
 using std::initializer_list;
 
-#include <cmath>
-using std::acos, std::cos, std::sin;
-const double Pi = acos(-1);
-
 #include <complex>
 using std::complex, std::exp, std::conj;
 using namespace std::literals::complex_literals;
-
-#include <chrono>
-using std::chrono::high_resolution_clock;
-using namespace std::literals::chrono_literals;
 
 #include <csignal>
 using std::sig_atomic_t, std::signal;
@@ -76,7 +68,9 @@ using std::vector;
 using std::ref;
 
 #include <chrono>
-using std::chrono::high_resolution_clock, std::chrono::duration_cast, std::chrono::nanoseconds;
+using std::chrono::high_resolution_clock, std::chrono::duration_cast,
+  std::chrono::nanoseconds;
+using namespace std::literals::chrono_literals;
 
 #include <boost/format.hpp>
 using boost::format, boost::str;
@@ -106,11 +100,12 @@ namespace {
 
 }
 
+const double sample_rate = 4e6; // lime specific
 
 // some global shared variables for use by the threads
 atomic<uint64_t> rx_timestamp      = 0; // latest timestamp from rx, we know of
-atomic<size_t>   cpfxs             = 0; // cyclic prefix shift: prefix len is: subcarriers >> cpfs
-atomic<size_t>   phymode           = 0; // physical layer mode;
+atomic<size_t>   cpf               = 0; // cyclic prefix len, 0 ... prefix_divider
+atomic<size_t>   phy_mode          = 1; // physical layer mode;
 
 // this is a hack, proper implementation pending
 string global_message;
@@ -123,17 +118,17 @@ void transmit(stop_token stoken, lms_stream_t& tx_stream, uint64_t start_time) {
   string message = global_message; // I know this is unproteced
   unsigned char header[8] = {0,0,0,0,0,0,0,0};
 
-  framegenerator fg(cpfxs, phymode);
-  uint32_t samp_per_frame = framegenerator::spfxs_prop[cpfxs].samp_per_frame;
+  hrframegen fg(sample_rate, cpf, phy_mode);
+  uint32_t samp_per_frame = sample_rate*hrframegen::frame_len;
 
-  vector<complex<float>> tx_buffer(fg.subcarriers + (fg.subcarriers >> cpfxs));
+  vector<complex<float>> tx_buffer(fg.subcarriers + (fg.subcarriers / cpf));
   uint64_t tx_timestamp = start_time;
   lms_stream_meta_t meta;
 
   while(!stoken.stop_requested()) {
       tx_timestamp += samp_per_frame;
       while(not stoken.stop_requested()
-            and rx_timestamp + samp_per_frame/2 < tx_timestamp) {
+            and rx_timestamp + samp_per_frame < tx_timestamp) {
           sleep_for(10us); // In a bidirectionional setting waiting here could
                            // be replaced by transmit data preparation.
         }
@@ -141,17 +136,13 @@ void transmit(stop_token stoken, lms_stream_t& tx_stream, uint64_t start_time) {
       if (not stoken.stop_requested()) {
           fg.assemble(header, reinterpret_cast<unsigned char*>(message.data()), message.size());
           bool last = fg.write(tx_buffer.data(), tx_buffer.size());
-          // The amplitude as generated overdrives the LimSDR resulting in
-          // splatter. The optimum scals factor needs to be determined.
-          for (size_t i=0; i < tx_buffer.size(); ++i) tx_buffer[i] *= 0.25;
           meta.timestamp = tx_timestamp;
-          meta.waitForTimestamp = false;//true;
+          meta.waitForTimestamp = true;
           while (not last) {
               LMS_SendStream(&tx_stream, tx_buffer.data(), tx_buffer.size(), &meta, 1000);
               // TODO: I do not yet understand the write function completely.
               // The documentaion and source of liquid appear incomplete.
               last = fg.write(tx_buffer.data(), tx_buffer.size());
-              for (size_t i=0; i < tx_buffer.size(); ++i) tx_buffer[i] *= 0.25;
               meta.waitForTimestamp = false;
               meta.flushPartialPacket = false;
             }
@@ -202,8 +193,8 @@ int main(int argc, char* argv[])
         ("version", "Print version.")
         ("freq", "Center frequency.", cxxopts::value<double>()->default_value("53e6"))
         ("gain", "Gain factor 0 ... 1.0", cxxopts::value<double>()->default_value("0.7"))
-        ("cpfxs", "Cyclic prefix len is: subcarriers shr cpfs.", cxxopts::value<size_t>()->default_value(("2")))
-        ("phymode", "Physical layer mode: 1 ... 14", cxxopts::value<size_t>()->default_value("1"))
+        ("cpf", "Cyclic prefix len: 0...50", cxxopts::value<size_t>()->default_value(("12")))
+        ("phy", "Physical layer mode: 1 ... 14", cxxopts::value<size_t>()->default_value("1"))
         ("message", "Beacon message", cxxopts::value<string>()->default_value("OE1XTU"));
         ;
     options.parse_positional({"message"});
@@ -227,27 +218,24 @@ int main(int argc, char* argv[])
     global_message = vm["message"].as<string>();
     //for (size_t n=0; n<100; ++n) global_message += "c"; // Test different msg len.
 
-    cpfxs = vm["cpfxs"].as<size_t>();
-    if (2 > cpfxs or cpfxs > 5)
-      throw runtime_error("prefix shift not in range 2 .. 5");
+    cpf = vm["cpf"].as<size_t>();
+    if (0 == cpf or  cpf > hrframegen::prefix_divider)
+      throw runtime_error("prefix not in range");
 
-    //samples_per_frame = cpfxs_to_spf[cpfxs];
-
-    phymode = vm["phymode"].as<size_t>();
-    if (0 == phymode or phymode > 14)
+    phy_mode = vm["phy"].as<size_t>();
+    if (0 == phy_mode or phy_mode > 14)
       throw runtime_error("invalid phymode requested");
 
-    double samp_rate  = framegenerator::spfxs_prop[cpfxs].samp_per_frame
-                        * framegenerator::frames_per_second;
-    double band_width = samp_rate;
+    double band_width = 2.5e6;
     double freq       = vm["freq"].as<double>();
     double gain       = vm["gain"].as<double>();
 
     cout << "wrbeacon parameters:" << endl;
-    cout << format("Freq:       %4.01f      MHz\n") % (1e-6*vm["freq"].as<double>());
+    cout << format("Freq:       %g MHz\n") % (1e-6*freq);
     cout << format("Gain:       %5.02f \n")         % vm["gain"].as<double>();
-    cout << format("Prefix shift:   %2d\n")         % cpfxs;
-    cout << format("Samplerate: %9.06f MHz\n")      % samp_rate;
+    cout << format("Prefix len: %2d\n")             % cpf;
+    cout << format("Samplerate: %g MHz\n")          % (1e-6*sample_rate);
+    cout << format("Phymode:    %2d\n")             % phy_mode;
     cout << endl;
 
     lms_info_str_t list[8];
@@ -277,14 +265,14 @@ int main(int argc, char* argv[])
     LMS_WriteFPGAReg(dev, 0x00c0, fpga_val);
 
     // TXANT_PRE
-    fpga_val = static_cast<uint16_t>(10.5e-6*samp_rate);
+    fpga_val = static_cast<uint16_t>(10.5e-6*sample_rate);
     LMS_WriteFPGAReg(dev, 0x0010, fpga_val);
 
     // TXANT_POST
-    fpga_val = static_cast<uint16_t>(11.5e-6*samp_rate);
+    fpga_val = static_cast<uint16_t>(11.5e-6*sample_rate);
     LMS_WriteFPGAReg(dev, 0x0011, fpga_val);
 
-    LMS_SetSampleRate(dev,     samp_rate, 0);
+    LMS_SetSampleRate(dev,     sample_rate, 0);
 
     // initialize receive direction
     LMS_EnableChannel(dev,     LMS_CH_RX, 0, true);
@@ -332,12 +320,13 @@ int main(int argc, char* argv[])
     }
     cout << "Exiting and cleaning up." << endl;
 
+    rx_thread.request_stop();
+    rx_thread.join();
+
     LMS_StopStream(&tx_stream);
     LMS_DestroyStream(dev, &tx_stream);
     LMS_EnableChannel(dev, LMS_CH_TX, 0, false);
 
-    rx_thread.request_stop();
-    rx_thread.join();
     LMS_StopStream(&rx_stream);
     LMS_DestroyStream(dev, &rx_stream);
     LMS_EnableChannel(dev, LMS_CH_RX, 0, false);
