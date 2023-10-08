@@ -191,3 +191,12 @@ bool hrframesync::execute(complex<uint8_t>* buffer, size_t buffer_len) {
       fbuffer[n] = (buffer[n].real() / 127.5 - 1) + 1i*(buffer[n].imag() / 127.5 -1 );
   return execute(fbuffer, buffer_len);
 }
+
+bool hrframesync::execute(complex<int8_t>* buffer, size_t buffer_len) {
+  // convert 8 bit to complex float, as e.g. for hackrf
+  complex<float> fbuffer[buffer_len];
+  for (size_t n=0; n<buffer_len; ++n)
+      fbuffer[n] = (buffer[n].real() / 127.5) + 1i*(buffer[n].imag() / 127.5 );
+  return execute(fbuffer, buffer_len);
+}
+

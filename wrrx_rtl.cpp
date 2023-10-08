@@ -66,8 +66,6 @@ using std::async, std::launch;
 #include <boost/format.hpp>
 using boost::format, boost::str;
 
-
-
 namespace {
 
   volatile sig_atomic_t signal_status = 0;
@@ -80,7 +78,7 @@ namespace {
 const double sample_rate = 2.4e6; // rtlsdr specific
 
 size_t cpf      = 0;
-size_t phy_mode = 1;
+//size_t phy_mode = 1;
 
 complex<float> buf_4MHz[40*512];   // 24*512*5/3
 complex<float> buf_2_4MHz[24*512]; // 24*512
@@ -116,7 +114,6 @@ int main(int argc, char* argv[]) {
         ("version", "Print version.")
         ("freq", "Center frequency.", cxxopts::value<double>()->default_value("53e6"))
         ("cpf", "Cyclic prefix len: 0...50", cxxopts::value<size_t>()->default_value(("12")))
-        ("phy", "Physical layer mode: 1 ... 14", cxxopts::value<size_t>()->default_value("1"))
         ;
 
     auto vm = options.parse(argc, argv);
@@ -135,9 +132,9 @@ int main(int argc, char* argv[]) {
     if (0 == cpf or  cpf > hrframegen::prefix_divider)
       throw runtime_error("prefix not in range");
 
-    phy_mode = vm["phy"].as<size_t>();
-    if (0 == phy_mode or phy_mode > 14)
-      throw runtime_error("invalid phymode requested");
+//    phy_mode = vm["phy"].as<size_t>();
+//    if (0 == phy_mode or phy_mode > 14)
+//      throw runtime_error("invalid phymode requested");
 
     double freq       = vm["freq"].as<double>();
 
@@ -145,7 +142,7 @@ int main(int argc, char* argv[]) {
     cout << format("Freq:       %g MHz\n") % (1e-6*freq);
     cout << format("Prefix len: %2d\n")             % cpf;
     cout << format("Samplerate: %g MHz\n")          % (1e-6*sample_rate);
-    cout << format("Phymode:    %2d\n")             % phy_mode;
+    //cout << format("Phymode:    %2d\n")             % phy_mode;
     cout << endl;
 
     size_t n = rtlsdr_get_device_count();
@@ -178,7 +175,7 @@ int main(int argc, char* argv[]) {
 
     jthread rx_thread(receive, dev);
 
-    cout << "Beacon control thread: enter EOF (Ctrl-D) or empty line to end." << endl;
+    cout << "Beacon rx control thread: enter EOF (Ctrl-D) or empty line to end." << endl;
     string line;
     while(getline(cin, line)) {
         if (line.empty()) break;

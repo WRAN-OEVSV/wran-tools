@@ -33,8 +33,9 @@ public:
   grcudp(const std::string& address  = "127.0.0.1", unsigned short port = 2000);
   ~grcudp();
 
-  void send(std::complex<float>* buf, std::size_t len);
+  void send(std::complex<float>*   buf, std::size_t len);
   void send(std::complex<uint8_t>* buf, std::size_t len);
+  void send(std::complex<int8_t>*  buf, std::size_t len);
 
 };
 

@@ -46,8 +46,7 @@ using namespace std::literals::complex_literals;
 using std::sig_atomic_t, std::signal;
 
 #include <thread>
-using std::jthread, std::stop_token;
-using std::this_thread::sleep_for;
+using std::jthread, std::stop_token, std::this_thread::sleep_for;
 
 #include <mutex>
 using std::mutex;
@@ -192,9 +191,9 @@ int main(int argc, char* argv[])
         ("h,help", "Print usage information.")
         ("version", "Print version.")
         ("freq", "Center frequency.", cxxopts::value<double>()->default_value("53e6"))
-        ("gain", "Gain factor 0 ... 1.0", cxxopts::value<double>()->default_value("0.7"))
+        ("gain", "Gain factor 0 ... 1.0", cxxopts::value<double>()->default_value("0.99"))
         ("cpf", "Cyclic prefix len: 0...50", cxxopts::value<size_t>()->default_value(("12")))
-        ("phy", "Physical layer mode: 1 ... 14", cxxopts::value<size_t>()->default_value("1"))
+        ("phy", "Physical layer mode: 1 ... 14", cxxopts::value<size_t>()->default_value("2"))
         ("message", "Beacon message", cxxopts::value<string>()->default_value("OE1XTU"));
         ;
     options.parse_positional({"message"});
@@ -238,12 +237,28 @@ int main(int argc, char* argv[])
     cout << format("Phymode:    %2d\n")             % phy_mode;
     cout << endl;
 
+    // Try to open devices until one is available or fail if none.
     lms_info_str_t list[8];
-    int n = LMS_GetDeviceList(list);
-    if (n < 1) lime::error("No device found");
-    lime::info("Device: %s", list[0]);
+    int numdev = LMS_GetDeviceList(list);
+    if (numdev < 1) lime::error("No device found");
+    int n = 0;
+    for (; n < numdev; ++n) {
+        try {
+          LMS_Open(&dev, list[n], nullptr);
+          lime::info("Device: %s", list[n]);
+          break;
+        } catch(runtime_error& e) { /* possibly busy, try next one */}
+      }
+    if (n == numdev)
+      lime::error("No device could be obened");
 
-    LMS_Open(&dev, list[0], nullptr);
+//    lms_info_str_t list[8];
+//    int n = LMS_GetDeviceList(list);
+//    if (n < 1) lime::error("No device found");
+//    lime::info("Device: %s", list[0]);
+
+//    LMS_Open(&dev, list[0], nullptr);
+
     LMS_Init(dev);
 
     // Set up GPIO.

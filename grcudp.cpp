@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
 */
 
-#include "grcudp.hpp"
+//#include "grcudp.hpp"
 
 #include <string>
 using std::string;
@@ -54,3 +54,12 @@ void grcudp::send(complex<uint8_t>* buf, size_t len) {
       fbuf[n] = (buf[n].real() / 127.5 - 1) + 1i*(buf[n].imag() / 127.5 -1 );
   send(fbuf, len);
 }
+
+void grcudp::send(complex<int8_t>* buf, size_t len) {
+  // convert 8 bit to complex float, as e.g. for hackrf
+  complex<float> fbuf[len];
+  for (size_t n=0; n<len; ++n)
+      fbuf[n] = (buf[n].real() / 127.0) + 1i * (buf[n].imag() / 127.0);
+  send(fbuf, len);
+}
+

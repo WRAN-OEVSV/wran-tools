@@ -74,8 +74,9 @@ protected:
 public:
   hrframesync(double sample_rate, std::size_t prefix_fraction);
   ~hrframesync();
-  bool execute(std::complex<float>* buffer, std::size_t buffer_len);
+  bool execute(std::complex<float>*   buffer, std::size_t buffer_len);
   bool execute(std::complex<uint8_t>* buffer, std::size_t buffer_len);
+  bool execute(std::complex<int8_t>*  buffer, std::size_t buffer_len);
 };
 
 #endif // _HAMRANFRM_HPP
