@@ -8,7 +8,7 @@
  */
 
 #include "config.hpp"
-#include "hamranfrm.hpp"
+#include "wranfrm.hpp"
 
 #include <liquid/liquid.h>
 
@@ -56,7 +56,7 @@ int main(int argc, char* argv[]) {
     options.add_options()
         ("h,help", "Print usage information.")
         ("version", "Print version.")
-        ("f,filename", "Output file name", cxxopts::value<path>()->default_value("wrrx_rtl.cfile"))
+        ("f,filename", "Output file name", cxxopts::value<path>()->default_value("beacon.cfile"))
         ("cpf", "Cyclic prefix len: 0...50", cxxopts::value<size_t>()->default_value(("12")))
         ("phy", "Physical layer mode: 1 ... 14", cxxopts::value<size_t>()->default_value("1"))
         ;
@@ -74,7 +74,7 @@ int main(int argc, char* argv[]) {
     }
 
     cpf = vm["cpf"].as<size_t>();
-    if (0 == cpf or  cpf > hrframegen::prefix_divider)
+    if (0 == cpf or  cpf > wrframegen::prefix_divider)
       throw runtime_error("prefix not in range");
 
     phy_mode = vm["phy"].as<size_t>();
@@ -89,12 +89,12 @@ int main(int argc, char* argv[]) {
 
     ifstream in(vm["filename"].as<path>(), ios::binary|ios::in);
 
-    hrframesync fs(sample_rate, cpf);
+    wrframesync fs(sample_rate, cpf);
 
-    complex<uint8_t> rtlbuf[8192];
+    complex<float> inbuf[8192];
 
-    while(in.read(reinterpret_cast<char*>(rtlbuf), 8192*sizeof(complex<uint8_t>))) {
-        fs.execute(rtlbuf, 8192);
+    while(in.read(reinterpret_cast<char*>(inbuf), 8192*sizeof(complex<float>))) {
+        fs.execute(inbuf, 8192);
     }
     // drop the last samples to the floor
 

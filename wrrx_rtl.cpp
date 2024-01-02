@@ -8,7 +8,7 @@
  */
 
 #include "config.hpp"
-#include "hamranfrm.hpp"
+#include "wranfrm.hpp"
 
 #include <rtl-sdr.h>
 
@@ -21,7 +21,7 @@ using std::size_t;
 
 #include <complex> // NB: Must be included before liquid.h !
 #include <liquid/liquid.h>
-using std::complex, std::exp, std::conj;
+using std::complex;
 using namespace std::literals::complex_literals;
 
 #include <iostream>
@@ -85,7 +85,7 @@ complex<float> buf_2_4MHz[24*512]; // 24*512
 rresamp_cccf rs;
 
 void receive_cb(unsigned char*buf, uint32_t len, void* ctx) {
-  hrframesync& fs (*static_cast<hrframesync*>(ctx));
+  wrframesync& fs (*static_cast<wrframesync*>(ctx));
   complex<uint8_t>* buf_8 = reinterpret_cast<complex<uint8_t>*>(buf);
   for (size_t n=0; n<24*512; ++n) buf_2_4MHz[n] = (buf_8[n].real()/127.5-1) + 1i*(buf_8[n].imag()/127.5-1);
   rresamp_cccf_execute(rs, buf_2_4MHz, buf_4MHz);
@@ -93,7 +93,7 @@ void receive_cb(unsigned char*buf, uint32_t len, void* ctx) {
 }
 
 void receive(stop_token stoken, rtlsdr_dev_t* dev) {
-  hrframesync fs(sample_rate*5/3, cpf);
+  wrframesync fs(sample_rate*5/3, cpf);
   // We need to resample, due to a bug in liquiddsp.
   rs = rresamp_cccf_create_default(40*512, 24*512);
   rtlsdr_read_async(dev, receive_cb, &fs, 0, 2*24*512);
@@ -129,7 +129,7 @@ int main(int argc, char* argv[]) {
     }
 
     cpf = vm["cpf"].as<size_t>();
-    if (0 == cpf or  cpf > hrframegen::prefix_divider)
+    if (0 == cpf or  cpf > wrframegen::prefix_divider)
       throw runtime_error("prefix not in range");
 
 //    phy_mode = vm["phy"].as<size_t>();

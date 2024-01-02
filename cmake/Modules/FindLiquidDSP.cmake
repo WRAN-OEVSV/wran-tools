@@ -36,13 +36,17 @@ The following cache variables may also be set:
 #]=======================================================================]
 
 
-find_path(LiquidDSP_INCLUDE_DIR
+find_path(_INCLUDE_DIR
   NAMES liquid.h
   PATHS ${PC_LiquidDSP_DIRS}
         /usr/local/include
         /usr/include
-  PATH_SUFFIXES liquid
+  PATH_SUFFIXES
+      liquid
+  NO_CACHE
 )
+
+get_filename_component(LiquidDSP_INCLUDE_DIR ${_INCLUDE_DIR} DIRECTORY CACHE)
 
 find_library(LiquidDSP_LIBRARY
   NAMES liquid
@@ -66,7 +70,7 @@ find_library(fec_LIBRARY
 list(APPEND _LIBRARIES ${fec_LIBRARY})
 
 # Read version from liquid.h include file
-file(STRINGS ${LiquidDSP_INCLUDE_DIR}/liquid.h VERSION_LINE
+file(STRINGS ${LiquidDSP_INCLUDE_DIR}/liquid/liquid.h VERSION_LINE
      REGEX [[^#define *LIQUID_VERSION *".*"]])
 string(REGEX MATCH [["(.*)"]] _ ${VERSION_LINE})
 set(LiquidDSP_VERSION ${CMAKE_MATCH_1})
@@ -95,3 +99,4 @@ if(LiquidDSP_FOUND AND NOT TARGET LiquidDSP)
 endif()
 
 unset(_LIBRARIES)
+

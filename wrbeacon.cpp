@@ -10,7 +10,7 @@
  */
 
 #include "config.hpp"
-#include "hamranfrm.hpp"
+#include "wranfrm.hpp"
 
 #include <cxxopts.hpp>
 
@@ -39,8 +39,14 @@ using std::map;
 using std::initializer_list;
 
 #include <complex>
-using std::complex, std::exp, std::conj;
+using std::complex, std::abs;
 using namespace std::literals::complex_literals;
+
+#include <algorithm>
+using std::max;
+
+#include <limits>
+using std::numeric_limits;
 
 #include <csignal>
 using std::sig_atomic_t, std::signal;
@@ -114,13 +120,15 @@ string global_message;
 // The transmit thread:
 void transmit(stop_token stoken, lms_stream_t& tx_stream, uint64_t start_time) {
 
+  float sample_max = numeric_limits<float>::min();
+
   string message = global_message; // I know this is unproteced
   unsigned char header[8] = {0,0,0,0,0,0,0,0};
 
-  hrframegen fg(sample_rate, cpf, phy_mode);
-  uint32_t samp_per_frame = sample_rate*hrframegen::frame_len;
+  wrframegen fg(sample_rate, cpf, phy_mode);
+  uint32_t samp_per_frame = sample_rate*wrframegen::frame_len;
 
-  vector<complex<float>> tx_buffer(fg.subcarriers + (fg.subcarriers / cpf));
+  vector<complex<float>> tx_buffer(fg.subcarriers + fg.prefix_len);
   uint64_t tx_timestamp = start_time;
   lms_stream_meta_t meta;
 
@@ -138,6 +146,7 @@ void transmit(stop_token stoken, lms_stream_t& tx_stream, uint64_t start_time) {
           meta.timestamp = tx_timestamp;
           meta.waitForTimestamp = true;
           while (not last) {
+              for (size_t i=0; i<tx_buffer.size(); ++i) sample_max = max(sample_max, abs(tx_buffer[i]));
               LMS_SendStream(&tx_stream, tx_buffer.data(), tx_buffer.size(), &meta, 1000);
               // TODO: I do not yet understand the write function completely.
               // The documentaion and source of liquid appear incomplete.
@@ -146,10 +155,12 @@ void transmit(stop_token stoken, lms_stream_t& tx_stream, uint64_t start_time) {
               meta.flushPartialPacket = false;
             }
           meta.flushPartialPacket = true;
+          for (size_t i=0; i<tx_buffer.size(); ++i) sample_max = max(sample_max, abs(tx_buffer[i]));
           LMS_SendStream(&tx_stream, tx_buffer.data(), tx_buffer.size(), &meta, 1000);
         }
     }
 
+  cout << "sample_max = " << sample_max << ", 1/sample_max = " << 1/sample_max << endl;
   cout << "Transmit thread stopping." << endl;
 }
 
@@ -191,10 +202,10 @@ int main(int argc, char* argv[])
         ("h,help", "Print usage information.")
         ("version", "Print version.")
         ("freq", "Center frequency.", cxxopts::value<double>()->default_value("53e6"))
-        ("gain", "Gain factor 0 ... 1.0", cxxopts::value<double>()->default_value("0.99"))
+        ("txpwr", "Tx Pwr. in in dBm (-26dBm ... 10dBm)", cxxopts::value<int>()->default_value("0"))
         ("cpf", "Cyclic prefix len: 0...50", cxxopts::value<size_t>()->default_value(("12")))
         ("phy", "Physical layer mode: 1 ... 14", cxxopts::value<size_t>()->default_value("2"))
-        ("message", "Beacon message", cxxopts::value<string>()->default_value("OE1XTU"));
+        ("message", "Beacon message", cxxopts::value<string>()->default_value("OE1XTU"))
         ;
     options.parse_positional({"message"});
     options.positional_help("message");
@@ -215,23 +226,24 @@ int main(int argc, char* argv[])
     // copy to global variable, this is preliminary and will be replaced
     // TODO: replace by message queue
     global_message = vm["message"].as<string>();
-    //for (size_t n=0; n<100; ++n) global_message += "c"; // Test different msg len.
 
     cpf = vm["cpf"].as<size_t>();
-    if (0 == cpf or  cpf > hrframegen::prefix_divider)
+    if (0 == cpf or  cpf > wrframegen::prefix_divider)
       throw runtime_error("prefix not in range");
 
     phy_mode = vm["phy"].as<size_t>();
     if (0 == phy_mode or phy_mode > 14)
       throw runtime_error("invalid phymode requested");
 
-    double band_width = 2.5e6;
+    //double band_width = 2.0e6;
     double freq       = vm["freq"].as<double>();
-    double gain       = vm["gain"].as<double>();
+    double txpwr      = vm["txpwr"].as<int>();
 
-    cout << "wrbeacon parameters:" << endl;
+    cout << "wrbeacon. Version " PROJECT_VER << endl;
+
+    cout << "Parameters:" << endl;
     cout << format("Freq:       %g MHz\n") % (1e-6*freq);
-    cout << format("Gain:       %5.02f \n")         % vm["gain"].as<double>();
+    cout << format("Peak Pwr:   %g dBm\n")         % vm["txpwr"].as<int>();
     cout << format("Prefix len: %2d\n")             % cpf;
     cout << format("Samplerate: %g MHz\n")          % (1e-6*sample_rate);
     cout << format("Phymode:    %2d\n")             % phy_mode;
@@ -252,13 +264,6 @@ int main(int argc, char* argv[])
     if (n == numdev)
       lime::error("No device could be obened");
 
-//    lms_info_str_t list[8];
-//    int n = LMS_GetDeviceList(list);
-//    if (n < 1) lime::error("No device found");
-//    lime::info("Device: %s", list[0]);
-
-//    LMS_Open(&dev, list[0], nullptr);
-
     LMS_Init(dev);
 
     // Set up GPIO.
@@ -269,9 +274,11 @@ int main(int argc, char* argv[])
     LMS_GPIODirRead(dev, &gpio_val, 1);
     lime::debug("GPIODIR: 0x%02x", unsigned(gpio_val));
 
-    gpio_val = 0;
+    gpio_val = 0x03; // 0xbf; //0xb3;
     LMS_GPIOWrite(dev, &gpio_val, 1);
 
+// This is the fast, data synchronous TX/TX signaling
+#if 0
     // Set up TX indicator on GPIO0.
     // https://github.com/myriadrf/LimeSDR-Mini-v2_GW/issues/3
     uint16_t fpga_val = 0;
@@ -286,15 +293,17 @@ int main(int argc, char* argv[])
     // TXANT_POST
     fpga_val = static_cast<uint16_t>(11.5e-6*sample_rate);
     LMS_WriteFPGAReg(dev, 0x0011, fpga_val);
+#endif
 
     LMS_SetSampleRate(dev,     sample_rate, 0);
 
     // initialize receive direction
     LMS_EnableChannel(dev,     LMS_CH_RX, 0, true);
-    LMS_SetLOFrequency(dev,    LMS_CH_RX, 0, freq);
     LMS_SetAntenna(dev,        LMS_CH_RX, 0, LMS_PATH_LNAW);
-    LMS_SetNormalizedGain(dev, LMS_CH_RX, 0, gain);
-    LMS_Calibrate(dev,         LMS_CH_RX, 0, band_width, 0);
+    LMS_SetLOFrequency(dev,    LMS_CH_RX, 0, freq);
+    LMS_SetNormalizedGain(dev, LMS_CH_RX, 0, 1.0);
+    LMS_SetGFIRLPF(dev,        LMS_CH_RX, 0, true, 1.86e6);
+    LMS_SetLPFBW(dev,          LMS_CH_RX, 0, 5e6);
 
     lms_stream_t rx_stream;
     rx_stream.channel = 0;
@@ -302,16 +311,14 @@ int main(int argc, char* argv[])
     rx_stream.throughputVsLatency = 0.5;
     rx_stream.dataFmt = lms_stream_t::LMS_FMT_F32;
     rx_stream.isTx = false;
-    LMS_SetupStream(dev, &rx_stream);
-
-    LMS_StartStream(&rx_stream);
 
     // initialize transmit direction
     LMS_EnableChannel(dev,     LMS_CH_TX, 0, true);
     LMS_SetLOFrequency(dev,    LMS_CH_TX, 0, freq);
     LMS_SetAntenna(dev,        LMS_CH_TX, 0, LMS_PATH_TX2);
-    LMS_SetNormalizedGain(dev, LMS_CH_TX, 0, gain);
-    LMS_Calibrate(dev,         LMS_CH_TX, 0, band_width, 0);
+    LMS_SetGaindB(dev,         LMS_CH_TX, 0, 61+txpwr);
+    LMS_SetGFIRLPF(dev,        LMS_CH_TX, 0, true, 1.86e6);
+    LMS_SetLPFBW(dev,          LMS_CH_TX, 0, 5e6);
 
     lms_stream_t tx_stream;
     tx_stream.channel = 0;
@@ -320,8 +327,15 @@ int main(int argc, char* argv[])
     assert(8*sizeof(float) == 32);
     tx_stream.dataFmt = lms_stream_t::LMS_FMT_F32;
     tx_stream.isTx = true;
+
+    LMS_Calibrate(dev,         LMS_CH_RX, 0, 2.5e6, 0);
+    LMS_Calibrate(dev,         LMS_CH_TX, 0, 2.5e6, 0);
+
+
+    LMS_SetupStream(dev, &rx_stream);
     LMS_SetupStream(dev, &tx_stream);
 
+    LMS_StartStream(&rx_stream);
     LMS_StartStream(&tx_stream);
 
     // start the threads

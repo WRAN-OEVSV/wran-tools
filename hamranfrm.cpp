@@ -18,11 +18,17 @@ using std::string;
 using std::size_t;
 
 #include <complex>
-using std::complex;
+using std::complex, std::abs;
 using namespace std::literals::complex_literals;
+
+#include <algorithm>
+using std::min, std::max, std::minmax;
 
 #include <cmath>
 using std::fmod;
+
+#include <limits>
+using std::numeric_limits;
 
 #include <stdexcept>
 using std::runtime_error;
@@ -30,10 +36,12 @@ using std::runtime_error;
 #include <cassert>
 
 const double hrframe::frame_len       =    10e-3; // s
-const double hrframe::bandwidth       = 2e6*0.92; // Hz
-const double hrframe::carrier_spacing =      4e3; // Hz
-const size_t hrframe::prefix_divider  =       50;
-const size_t hrframe::pilot_fraction  =        5;
+const double hrframe::sample_rate     =    200e3; // Hz
+const double hrframe::bandwidth       =    200e3; // Hz
+const double hrframe::carrier_spacing =     3125; // Hz
+const size_t hrframe::prefix_divider  =       32;
+const size_t hrframe::pilot_fraction  =        8;
+const size_t hrframe::dc_blocker      =        2;
 
 const hrframegen::phy_t hrframegen::phy_prop[] =
 {
@@ -53,14 +61,13 @@ const hrframegen::phy_t hrframegen::phy_prop[] =
   {LIQUID_MODEM_QAM64,   LIQUID_FEC_CONV_V27P56, LIQUID_FEC_NONE}     // 14
 };
 
-hrframe::hrframe(double sample_rate, size_t prefix_fraction)
-  : sample_rate(sample_rate),
-    subcarriers(sample_rate/carrier_spacing),
-    available_carriers(bandwidth/carrier_spacing),
-    guards((subcarriers - available_carriers)/2),
+hrframe::hrframe(size_t prefix_fraction)
+  : subcarriers(sample_rate/carrier_spacing),
+    available_carriers(bandwidth/carrier_spacing - dc_blocker),
+    guards((subcarriers - available_carriers - dc_blocker)/2),
     used_carriers(available_carriers - available_carriers/pilot_fraction),
     prefix_len((subcarriers*prefix_fraction)/prefix_divider),
-    taper_len(prefix_len/16) {
+    taper_len(0) {//prefix_len/16) {
 
   assert(0 == fmod(bandwidth, carrier_spacing));
   assert(0 == fmod(subcarriers, 2));
@@ -73,38 +80,28 @@ hrframe::hrframe(double sample_rate, size_t prefix_fraction)
     throw runtime_error("sample_rate must be multiple of carrier_spacing*prefix_divider");
 
   sca.resize(subcarriers);
-  for (size_t i = 0;                  i < guards-1;             ++i)
+  for (size_t i = 0;                  i < guards;             ++i)
       sca[(i+subcarriers/2) % subcarriers] = OFDMFRAME_SCTYPE_NULL; // guard band
 
-  for (size_t i = guards;             i < subcarriers/2; ++i)
-      sca[((i+subcarriers/2) % subcarriers) - 1] = (0 == i%pilot_fraction)? OFDMFRAME_SCTYPE_PILOT :  OFDMFRAME_SCTYPE_DATA;
+  for (size_t i = guards;     2*i + dc_blocker < subcarriers; ++i)
+      sca[((i+subcarriers/2) % subcarriers)] = (0 == i%pilot_fraction)? OFDMFRAME_SCTYPE_PILOT :  OFDMFRAME_SCTYPE_DATA;
 
-  for (size_t i = subcarriers/2; i < subcarriers/2+2; ++i)
+  for (size_t i = (subcarriers-dc_blocker)/2; i < (subcarriers+dc_blocker)/2+2; ++i)
     sca[(i+subcarriers/2) % subcarriers] = OFDMFRAME_SCTYPE_NULL; // DC block
 
-  for (size_t i = subcarriers/2;      i < subcarriers-guards; ++i)
-      sca[((i+subcarriers/2) % subcarriers) + 1] = (0 == i%pilot_fraction)? OFDMFRAME_SCTYPE_PILOT :  OFDMFRAME_SCTYPE_DATA;
+  for (size_t i = (subcarriers+dc_blocker)/2;  i+guards < subcarriers; ++i)
+      sca[((i+subcarriers/2) % subcarriers)] = (0 == i%pilot_fraction)? OFDMFRAME_SCTYPE_PILOT :  OFDMFRAME_SCTYPE_DATA;
 
-  for (size_t i = subcarriers-guards+1; i < subcarriers;        ++i)
+  for (size_t i = subcarriers-guards; i < subcarriers;        ++i)
       sca[(i+subcarriers/2) % subcarriers] = OFDMFRAME_SCTYPE_NULL; // guard_band]
-
-//  for (size_t i = 0;                  i < guards;             ++i)
-//      sca[(i+subcarriers/2) % subcarriers] = OFDMFRAME_SCTYPE_NULL; // guard band
-
-//  for (size_t i = guards;             i < subcarriers-guards; ++i)
-//      sca[(i+subcarriers/2) % subcarriers] = (0 == i%pilot_fraction)? OFDMFRAME_SCTYPE_PILOT :  OFDMFRAME_SCTYPE_DATA;
-
-//  for (size_t i = subcarriers-guards; i < subcarriers;        ++i)
-//      sca[(i+subcarriers/2) % subcarriers] = OFDMFRAME_SCTYPE_NULL; // guard_band]
-
 }
 
 hrframe::~hrframe() {
 
 }
 
-hrframegen::hrframegen(double sample_rate, size_t prefix_fraction, size_t phy_mode)
-  : hrframe(sample_rate, prefix_fraction) {
+hrframegen::hrframegen(size_t prefix_fraction, size_t phy_mode)
+  : hrframe(prefix_fraction) {
 
   ofdmflexframegenprops_s fgp;
   ofdmflexframegenprops_init_default(&fgp);
@@ -116,7 +113,8 @@ hrframegen::hrframegen(double sample_rate, size_t prefix_fraction, size_t phy_mo
 
   fg = ofdmflexframegen_create(subcarriers, prefix_len, taper_len, sca.data(), &fgp);
   ofdmflexframegen_print(fg);
-  //ofdmframe_print_sctype(sca.data(), subcarriers);
+  ofdmframe_print_sctype(sca.data(), subcarriers);
+//  sample_max = numeric_limits<float>::min();
 }
 
 void hrframegen::assemble(const unsigned char* header, const unsigned char* payload, size_t payload_len) {
@@ -128,12 +126,16 @@ bool hrframegen::write(complex<float>* buffer, size_t buffer_len) {
   int result = ofdmflexframegen_write(fg, buffer, buffer_len);
   // Amplitudes > 1.0 overdrive the ADC resulting in splatter.
   // TODO: The optimum scale factor needs to be determined.
-  for (size_t i=0; i < buffer_len; ++i) buffer[i] *= 0.275;
+//  for (size_t i=0; i < buffer_len; ++i) {
+//      sample_max = max(sample_max, abs(buffer[i]));
+//      buffer[i] *= 0.241; //0.3;//0.296;
+//    }
   return (1 == result)?true:false;
 }
 
 hrframegen::~hrframegen() {
   ofdmflexframegen_destroy(fg);
+//  cout << "sample_max = " << sample_max << ", 1/sample_max = " << 1/sample_max << endl;
 }
 
 extern "C" {
@@ -151,8 +153,8 @@ extern "C" {
   }
 }
 
-hrframesync::hrframesync(double sample_rate, size_t prefix_fraction)
-  : hrframe(sample_rate, prefix_fraction) {
+hrframesync::hrframesync(size_t prefix_fraction)
+  : hrframe(prefix_fraction) {
   fs = ofdmflexframesync_create(subcarriers, prefix_len, taper_len,
                                 sca.data(), hrframesync_wrap_callback, this);
   ofdmflexframesync_print(fs);

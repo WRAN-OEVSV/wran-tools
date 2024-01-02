@@ -9,7 +9,7 @@
  */
 
 #include "config.hpp"
-#include "hamranfrm.hpp"
+#include "wranfrm.hpp"
 
 #include <cxxopts.hpp>
 
@@ -94,7 +94,7 @@ int main(int argc, char* argv[])
     //for (size_t n=0; n<100; ++n) global_message += "c"; // Test different msg len.
 
     cpf = vm["cpf"].as<size_t>();
-    if (0 == cpf or  cpf > hrframegen::prefix_divider)
+    if (0 == cpf or  cpf > wrframegen::prefix_divider)
       throw runtime_error("prefix not in range");
 
     phy_mode = vm["phy"].as<size_t>();
@@ -111,13 +111,13 @@ int main(int argc, char* argv[])
 
     unsigned char header[8] = {0,0,0,0,0,0,0,0};
 
-    hrframegen fg(sample_rate, cpf, phy_mode);
-    size_t samp_per_frame = sample_rate*hrframegen::frame_len;
+    wrframegen fg(sample_rate, cpf, phy_mode);
+    size_t samp_per_frame = sample_rate*wrframegen::frame_len;
 
     vector<complex<float>> tx_buffer(fg.subcarriers + fg.prefix_len);
     size_t tx_timestamp = 0;
 
-    for (size_t n=0; n<1000; ++n) {
+    for (size_t n=0; n<10; ++n) {
         tx_timestamp = 0;
         fg.assemble(header, reinterpret_cast<unsigned char*>(global_message.data()), global_message.size());
         bool last = fg.write(tx_buffer.data(), tx_buffer.size());

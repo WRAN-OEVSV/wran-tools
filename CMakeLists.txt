@@ -27,8 +27,8 @@ include_directories(${PROJECT_BINARY_DIR})
 add_executable(wrbeacon-sim)
 
 target_sources(wrbeacon-sim PRIVATE
-  hamranfrm.cpp
-  hamranfrm.hpp
+  wranfrm.cpp
+  wranfrm.hpp
   wrbeacon_sim.cpp
   config.hpp.in
 )
@@ -41,8 +41,8 @@ target_link_libraries(wrbeacon-sim
 add_executable(wrrx-sim)
 
 target_sources(wrrx-sim PRIVATE
-  hamranfrm.cpp
-  hamranfrm.hpp
+  wranfrm.cpp
+  wranfrm.hpp
   wrrx_sim.cpp
   config.hpp.in
 )
@@ -86,11 +86,28 @@ if (LimeSuite_FOUND)
     LimeSuite
   )
 
+  add_executable(cwbeacon)
+
+  target_sources(cwbeacon PRIVATE
+    cwbeacon.cpp
+    config.hpp.in
+    morsecode.cpp
+    morsecode.hpp
+    keyer.cpp
+    keyer.hpp
+  )
+
+  target_link_libraries(cwbeacon
+    PRIVATE
+    Boost::system
+    LimeSuite
+  )
+
   add_executable(wrbeacon)
 
   target_sources(wrbeacon PRIVATE
-    hamranfrm.cpp
-    hamranfrm.hpp
+    wranfrm.cpp
+    wranfrm.hpp
     wrbeacon.cpp
     config.hpp.in
   )
@@ -101,11 +118,26 @@ if (LimeSuite_FOUND)
     LiquidDSP
   )
 
+  add_executable(hrbeacon)
+
+  target_sources(hrbeacon PRIVATE
+    hamranfrm.cpp
+    hamranfrm.hpp
+    hrbeacon.cpp
+    config.hpp.in
+  )
+
+  target_link_libraries(hrbeacon
+    PRIVATE
+    LimeSuite
+    LiquidDSP
+  )
+
   add_executable(wrrx-lime)
 
   target_sources(wrrx-lime PRIVATE
-    hamranfrm.cpp
-    hamranfrm.hpp
+    wranfrm.cpp
+    wranfrm.hpp
     wrrx_lime.cpp
     config.hpp.in
   )
@@ -122,6 +154,8 @@ if (LimeSuite_FOUND)
     wrgpio
     wrbeacon
     wrrx-lime
+    hrbeacon
+    cwbeacon
   )
 
 endif(LimeSuite_FOUND)
@@ -133,8 +167,8 @@ if (rtlsdr_FOUND)
   add_executable(wrrx-rtl)
 
   target_sources(wrrx-rtl PRIVATE
-    hamranfrm.cpp
-    hamranfrm.hpp
+    wranfrm.cpp
+    wranfrm.hpp
     wrrx_rtl.cpp
     config.hpp.in
   )
@@ -151,17 +185,17 @@ if (rtlsdr_FOUND)
 endif(rtlsdr_FOUND)
 
 pkg_check_modules(HackRF IMPORTED_TARGET libhackrf)
-if (HackRF_FOUND)
+if (pkgcfg_lib_HackRF_hackrf)
 
   add_executable(wrrx-hackrf)
 
   target_sources(wrrx-hackrf PRIVATE
-    hamranfrm.cpp
-    hamranfrm.hpp
+    wranfrm.cpp
+    wranfrm.hpp
     wrrx_hackrf.cpp
     config.hpp.in
-#    grcudp.hpp
-#    grcudp.cpp
+    grcudp.hpp
+    grcudp.cpp
   )
 
   target_link_libraries(wrrx-hackrf
@@ -173,4 +207,6 @@ if (HackRF_FOUND)
 
 install(TARGETS wrrx-hackrf)
 
-endif(HackRF_FOUND)
+endif(pkgcfg_lib_HackRF_hackrf)
+
+include(CPack)

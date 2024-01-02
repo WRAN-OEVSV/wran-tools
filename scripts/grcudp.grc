@@ -98,7 +98,7 @@ blocks:
     color8: '"dark red"'
     color9: '"dark green"'
     comment: ''
-    ctrlpanel: 'False'
+    ctrlpanel: 'True'
     fc: 53e6
     fftsize: '4096'
     freqhalf: 'True'

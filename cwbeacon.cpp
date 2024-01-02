@@ -4,12 +4,12 @@
 */
 
 /*
- * A tool for testing the signal paths of the WRAN box. The local oszillator
- * frequency, the band filters, the gain, and a amplitude modulation tone can
- * be set.
+ * A CW Beacon for the HAMRAN project.
  */
 
 #include "config.hpp"
+
+#include "keyer.hpp"
 
 #include <cxxopts.hpp>
 
@@ -98,71 +98,52 @@ namespace {
 }
 
 map<string, uint8_t> gpio_map{{"TXwoBP", 0xbf}, {"TX6m", 0xb3}, {"TX2m", 0xb7}, {"TX70cm", 0xbb}};
-const double sample_rate = 1e6; // MSps
+const double sample_rate = 2.5e6; // MSps
 
 // some global shared variables for use by the threads
 atomic<uint64_t> rx_timestamp = 0; // latest timestamp from rx, we know of
 atomic<double>   tone         = 100e3; //kHz
 
+string message; // the beacon text.
+mutex message_mutex;
+
 // Note: LMS_SendStream and LMS_RecvStream are the ONLY thread safe functions
 // of limesuite.
 // The transmit thread:
-void transmit(stop_token stoken, lms_stream_t& tx_stream, uint64_t start_time) {
+void transmit(stop_token stoken, lms_stream_t& tx_stream) {
 
-  float sample_max = numeric_limits<float>::min();
+  keyer k(60, tone, 0, 1.0, sample_rate);
 
   const int buffer_size = 1024*8;
   complex<float> tx_buffer[buffer_size];
 
-  // The oscillator is implemented by rotation of a complex<double>
-  // to lower the noise floor compared to the basic example.
-  // Phase increment per step:
-  complex<double> w = exp(2.0i*acos(-1)*double(tone/sample_rate));
-  // Initialize the oscillator:
-  complex<double> y = conj(w);
-
-  // initialize the buffer
-  for (size_t n = 0; n<buffer_size; ++n)
-      tx_buffer[n] = exp(2.0i*acos(-1)*double(tone/sample_rate*n));
-
-  //auto t1 = high_resolution_clock::now();
-  //while(high_resolution_clock::now() - t1 < 30s) {
   while(!stoken.stop_requested()) {
-    for (size_t n = 0; n<buffer_size; ++n)  {
-        tx_buffer[n] = (y*=w);
-        sample_max = max(sample_max, abs(tx_buffer[n]));
-    }
-    LMS_SendStream(&tx_stream, tx_buffer, buffer_size, nullptr, 1000);
+      size_t size = k.get_frame(tx_buffer, buffer_size);
+      if (0 == size) {
+          message_mutex.lock();
+          k.send(message);
+          message_mutex.unlock();
+          k.space(2.0);
+          k.mark(20.0);
+          float fill_time = 60.0 - k.pending_time();
+          while (fill_time < 0.0)
+            fill_time += 60.0;
+          k.space(fill_time);
+          size = k.get_frame(tx_buffer, buffer_size);
+        }
+
+    LMS_SendStream(&tx_stream, tx_buffer, size, nullptr, 1000);
   }
 
-  cout << "sample_max = " << sample_max << ", 1/sample_max = " << 1/sample_max << endl;
   cout << "Transmit thread stopping." << endl;
-}
-
-void receive(stop_token stoken, lms_stream_t& rx_stream, lms_stream_t& tx_stream) {
-  vector<complex<float>> rx_buffer(1024*4);
-  lms_stream_meta_t meta;
-  int ret = LMS_RecvStream(&rx_stream, rx_buffer.data(), rx_buffer.size(), &meta, 1000);
-  jthread tx_thread(transmit, ref(tx_stream), meta.timestamp);
-  rx_timestamp = meta.timestamp +  ret;
-
-  while(!stoken.stop_requested()) {
-      ret = LMS_RecvStream(&rx_stream, rx_buffer.data(), rx_buffer.size(), &meta, 1000);
-      rx_timestamp = meta.timestamp + ret;
-      // The receive thread does not do much yet, but fetch samples and update time.
-  }
-
-  cout << "Receive thread stopping."  << endl;
-
-  tx_thread.request_stop();
-  tx_thread.join();
 }
 
 // The control thread.
 int main(int argc, char* argv[])
 {
 
-  signal(SIGINT, signal_handler); // install handler to catch ctrl-c
+  signal(SIGINT,  signal_handler); // install handler to catch ctrl-c
+  signal(SIGTERM, signal_handler);
 
   max_LogLevel = lime::LOG_LEVEL_INFO;
   lime::registerLogHandler(&limeSuiteLogHandler);
@@ -177,11 +158,13 @@ int main(int argc, char* argv[])
         ("version", "Print version.")
         ("mode", "TXwoBP, TX6m, TX2m, TX70cm", cxxopts::value<string>()->default_value("TXwoBP"))
         ("freq", "Center frequency.", cxxopts::value<double>()->default_value("52.9e6"))
-        ("txpwr", "Tx Pwr. in in dBm (-26dBm ... 10dBm)", cxxopts::value<int>()->default_value("0"))
+        ("txpwr", "Tx Pwr. in in dBm (-26dBm ... 10dBm)", cxxopts::value<int>()->default_value("-10"))
         ("tone", "Modulation freqeuncy.", cxxopts::value<double>()->default_value("100e3"))
+        ("message", "Beacon message", cxxopts::value<string>()->default_value("OE1XTU"))
         ;
-    options.parse_positional({"mode", "freq", "txpwr", "tone"});
-    options.positional_help("mode freq gain tone");
+
+    options.parse_positional({"message"});
+    options.positional_help("message");
     options.show_positional_help();
 
     auto vm = options.parse(argc, argv);
@@ -195,6 +178,8 @@ int main(int argc, char* argv[])
         cout <<PROJECT_VER << endl;
         return EXIT_SUCCESS;
     }
+
+    message = vm["message"].as<string>(); // no need for message_mutex yet.
 
     if (1 != gpio_map.count(vm["mode"].as<string>()))
       throw runtime_error(str(format("%s is an invalid mode") % vm["mode"].as<string>()));
@@ -210,6 +195,7 @@ int main(int argc, char* argv[])
     cout << format("Samplerate: %g MHz\n") % (1e-6*sample_rate);
     cout << format("Mode: %s\n")           % vm["mode"].as<string>();
     cout << format("Tone: %3.3f kHz\n")    % (1e-3*tone);
+    cout << format("Message: %s\n")        % message;
     cout << endl;
 
     // Try to open devices until one is available or fail if none.
@@ -229,10 +215,6 @@ int main(int argc, char* argv[])
 
     LMS_Init(dev);
 
-    lms_range_t lpf_rx;
-    LMS_GetLPFBWRange(dev, LMS_CH_RX, &lpf_rx);
-    cout << format("Rx Filter Range: min %.3f MHz, max %.3f MHz, step %.1f Hz\n") % (1e-6*lpf_rx.min) % (1e-6*lpf_rx.max) % (lpf_rx.step);
-
     lms_range_t lpf_tx;
     LMS_GetLPFBWRange(dev, LMS_CH_TX, &lpf_tx);
     cout << format("Tx Filter Range: min %.3f MHz, max %.3f MHz, step %.1f Hz\n") % (1e-6*lpf_tx.min) % (1e-6*lpf_tx.max) % (lpf_tx.step);
@@ -250,21 +232,6 @@ int main(int argc, char* argv[])
 
     LMS_SetSampleRate(dev, sample_rate, 0);
 
-    // initialize receive direction
-    LMS_EnableChannel(dev,     LMS_CH_RX, 0, true);
-    LMS_SetAntenna(dev,        LMS_CH_RX, 0, LMS_PATH_LNAW);
-    LMS_SetLOFrequency(dev,    LMS_CH_RX, 0, freq);
-    LMS_SetNormalizedGain(dev, LMS_CH_RX, 0, 1.0);
-    LMS_SetGFIRLPF(dev,        LMS_CH_RX, 0, true, 1.8e6);
-    LMS_SetLPFBW(dev,          LMS_CH_RX, 0, 5e6);
-
-    lms_stream_t rx_stream;
-    rx_stream.channel = 0;
-    rx_stream.fifoSize = 1024;
-    rx_stream.throughputVsLatency = 0.5;
-    rx_stream.dataFmt = lms_stream_t::LMS_FMT_F32;
-    rx_stream.isTx = false;
-
     // initialize transmit direction
     LMS_EnableChannel(dev,  LMS_CH_TX, 0, true);
     LMS_SetLOFrequency(dev, LMS_CH_TX, 0, freq);
@@ -281,28 +248,21 @@ int main(int argc, char* argv[])
     tx_stream.dataFmt = lms_stream_t::LMS_FMT_F32;
     tx_stream.isTx = true;
 
-    LMS_Calibrate(dev,      LMS_CH_RX, 0, 4e6, 0);
     LMS_Calibrate(dev,      LMS_CH_TX, 0, 4e6, 0);
-
-    LMS_SetupStream(dev, &rx_stream);
     LMS_SetupStream(dev, &tx_stream);
-
-    LMS_StartStream(&rx_stream);
     LMS_StartStream(&tx_stream);
 
-    // start the threads
-    jthread rx_thread(receive, ref(rx_stream), ref(tx_stream));
-    // transmit is started from inside receive thread
+    // start the thread
+    jthread tx_thread(transmit, ref(tx_stream));
 
-    cout << "siggen control thread: enter EOF (Ctrl-D) or empty line to end." << endl;
-    string line;
-    while(getline(cin, line)) {
-        if (line.empty()) break;
+    cout << "cwbeacon control thread: stop with SIGINT (Ctrl-C) or SIGTERM" << endl;
+    while (0 == signal_status) {
+        sleep_for(100ms);
     }
-    cout << "Exiting ..." << endl;
+    cout << "Caught signal " << signal_status << ", exiting ..." << endl;
 
-    rx_thread.request_stop();
-    rx_thread.join();
+    tx_thread.request_stop();
+    tx_thread.join();
 
     cout << "Cleaning up ..." << endl;
 
@@ -310,8 +270,8 @@ int main(int argc, char* argv[])
     LMS_DestroyStream(dev, &tx_stream);
     LMS_EnableChannel(dev, LMS_CH_TX, 0, false);
 
-    LMS_StopStream(&rx_stream);
-    LMS_DestroyStream(dev, &rx_stream);
+//    LMS_StopStream(&rx_stream);
+//    LMS_DestroyStream(dev, &rx_stream);
     LMS_EnableChannel(dev, LMS_CH_RX, 0, false);
 
     gpio_val = 0x00;

@@ -18,20 +18,21 @@ protected:
 
 public:
   static const double      frame_len;       // in s
+  static const double      sample_rate;     // in Hz
   static const double      bandwidth;       // in Hz
   static const double      carrier_spacing; // in Hz
   static const std::size_t prefix_divider;
   static const std::size_t pilot_fraction;
+  static const std::size_t dc_blocker;
 
-  const double      sample_rate;     // in Hz
   const std::size_t subcarriers;
   const std::size_t available_carriers; // pilot + data
-  const std::size_t guards;
-  const std::size_t used_carriers; // data
+  const std::size_t guards;             // guards per side
+  const std::size_t used_carriers;      // data
   const std::size_t prefix_len;
   const std::size_t taper_len;
 
-  hrframe(double sample_rate, std::size_t prefix_fraction);
+  hrframe(std::size_t prefix_fraction);
   ~hrframe();
 
 };
@@ -48,12 +49,13 @@ class hrframegen : public hrframe {
   static const phy_t phy_prop[];
 
 public:
-  hrframegen(double sample_rate,
-             std::size_t prefix_fraction, std::size_t phy_mode);
+  hrframegen(std::size_t prefix_fraction, std::size_t phy_mode);
   ~hrframegen();
   void assemble(const unsigned char* header,
                 const unsigned char* payload, std::size_t payload_len);
   bool write(std::complex<float>* buffer, std::size_t buffer_len);
+
+  //float sample_max;
 };
 
 typedef int (fn_framesync_callback) (unsigned char*,
@@ -72,7 +74,7 @@ protected:
                        bool payload_valid, framesyncstats_s stats);
 
 public:
-  hrframesync(double sample_rate, std::size_t prefix_fraction);
+  hrframesync(std::size_t prefix_fraction);
   ~hrframesync();
   bool execute(std::complex<float>*   buffer, std::size_t buffer_len);
   bool execute(std::complex<uint8_t>* buffer, std::size_t buffer_len);

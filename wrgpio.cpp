@@ -12,13 +12,14 @@
 
 #include "config.hpp"
 
+#include <cxxopts.hpp>
+
 #include <lime/LimeSuite.h>
 #include <lime/Logger.h>
 
 #include <boost/format.hpp>
 using boost::format;
 
-#include<curses.h>
 
 #include <cstdlib>
 
@@ -61,22 +62,53 @@ namespace {
   }
 }
 
-int main() {
+int main(int argc, char* argv[]) {
 
   max_LogLevel = lime::LOG_LEVEL_INFO;
   lime::registerLogHandler(&limeSuiteLogHandler);
 
+  lms_device_t* dev = nullptr;
+
   try {
+
+    cxxopts::Options options("wrgpio", "GPIO manipulation tool.");
+    options.add_options()
+        ("h,help", "Print usage information.")
+        ("version", "Print version.")
+        ("gpio", "[x](r|t|t6|t2|t70) with x opt. for upper nibble , ", cxxopts::value<string>())
+        ;
+    options.parse_positional("gpio");
+    options.positional_help("gpio");
+    options.show_positional_help();
+
+    auto vm = options.parse(argc, argv);
+
+    if (vm.count("help")) {
+        cout << options.help() << endl;
+        return EXIT_SUCCESS;
+    }
+
+    if (vm.count("version")) {
+        cout <<PROJECT_VER << endl;
+        return EXIT_SUCCESS;
+    }
 
     cout << "WRAN GPIO tool. Version " PROJECT_VER << endl;
 
+    // Try to open devices until one is available or fail if none.
     lms_info_str_t list[8];
-    int n = LMS_GetDeviceList(list);
-    if (n < 1) lime::error("No device found");
-    cout << "Found device: " << list[0] << endl;
-
-    lms_device_t* dev = nullptr;
-    LMS_Open(&dev, list[0], nullptr);
+    int numdev = LMS_GetDeviceList(list);
+    if (numdev < 1) lime::error("No device found");
+    int n = 0;
+    for (; n < numdev; ++n) {
+        try {
+          LMS_Open(&dev, list[n], nullptr);
+          lime::info("Device: %s", list[n]);
+          break;
+        } catch(runtime_error& e) { /* possibly busy, try next one */}
+      }
+    if (n == numdev)
+      lime::error("No device could be obened");
 
     LMS_Init(dev);
 
@@ -85,14 +117,22 @@ int main() {
     LMS_GPIODirWrite(dev, &gpio_dir, 1);
 
     uint8_t gpio_val = 0;
+    LMS_GPIODirRead(dev, &gpio_val, 1);
+    lime::debug("GPIODIR: 0x%02x", unsigned(gpio_val));
 
-    cout << "Enter [hexdigit]mode, or EOF (Ctrl-D) to end." << endl;
-    cout << "    Optional hexdigit selects front panel LED's." << endl;
-    cout << "    Mode is one of r, t, t6, t2, t70" << endl;
-    cout << "e.g. ft6 switch on all LED's and PA with 6m filters." << endl;
-    string line;
-    while(getline(cin, line)) {
+    bool interactive = 0 == vm.count("gpio");
+    string line = interactive?"":vm["gpio"].as<string>();
+
+    if (interactive) {
+        cout << "Enter [hexdigit]mode, or EOF (Ctrl-D) to end." << endl;
+        cout << "    Optional hexdigit selects front panel LED's." << endl;
+        cout << "    Mode is one of r, t, t6, t2, t70" << endl;
+        cout << "e.g. ft6 switch on all LED's and PA with 6m filters." << endl;
+      }
+
+    while(not interactive or getline(cin, line)) {
         gpio_val = 0;
+
         size_t pos = 0;
         if (line.empty()) break;
         if (isxdigit(line[0])) {
@@ -107,11 +147,15 @@ int main() {
         else { cout << "unrecognized input: " << line << endl;}
         cout << format("Set GPIO to: 0x%02x") % unsigned(gpio_val) << endl;
         LMS_GPIOWrite(dev, &gpio_val, 1);
+        if (not interactive) break;
     }
-    cout << "Exit and reset GPIO to 0x00." << endl;
 
-    gpio_val = 0;
-    LMS_GPIOWrite(dev, &gpio_val, 1);
+    if (interactive) {
+        cout << "Exit and reset GPIO to 0x00." << endl;
+
+        gpio_val = 0;
+        LMS_GPIOWrite(dev, &gpio_val, 1);
+      }
 
     LMS_Close(dev);
 

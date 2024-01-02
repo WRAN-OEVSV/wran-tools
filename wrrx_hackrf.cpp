@@ -8,7 +8,7 @@
  */
 
 #include "config.hpp"
-#include "hamranfrm.hpp"
+#include "wranfrm.hpp"
 
 #include <complex> // NB: Must be included before liquid.h !
 #include <liquid/liquid.h>
@@ -49,9 +49,10 @@ namespace {
 int receive_cb(hackrf_transfer* transfer) {
   complex<int8_t>* cbuf = reinterpret_cast<complex<int8_t>*>(transfer->buffer);
   int len = transfer->valid_length/sizeof(complex<int8_t>);
+
   //grcudp& udp(*static_cast<grcudp*>(transfer->rx_ctx));
-  hrframesync& fs (*static_cast<hrframesync*>(transfer->rx_ctx));
   //udp.send(cbuf, len);
+  wrframesync& fs (*static_cast<wrframesync*>(transfer->rx_ctx));
   fs.execute(cbuf, len);
   return 0;
 }
@@ -68,9 +69,9 @@ int main(int argc, char* argv[]) {
     options.add_options()
         ("h,help", "Print usage information.")
         ("version", "Print version.")
-        ("vgagain", "Baseband gain 0 ... 62dB in 2dB steps", cxxopts::value<int>()->default_value("26"))
-        ("lnagain", "IF gain 0 ... 47dB in 1dB steps", cxxopts::value<int>()->default_value("25"))
-        ("ampgain", "IF gain 0 or 11dB", cxxopts::value<int>()->default_value("0"))
+        ("vgagain", "Baseband gain 0 ... 62dB in 2dB steps", cxxopts::value<int>()->default_value("30"))
+        ("lnagain", "IF gain 0 ... 47dB in 1dB steps", cxxopts::value<int>()->default_value("14"))
+        ("ampgain", "IF gain 0 or 11dB", cxxopts::value<int>()->default_value("11"))
         ("cpf", "Cyclic prefix len: 0...50", cxxopts::value<size_t>()->default_value(("12")))
         ;
 
@@ -91,7 +92,7 @@ int main(int argc, char* argv[]) {
     }
 
     size_t cpf = vm["cpf"].as<size_t>();
-    if (0 == cpf or  cpf > hrframegen::prefix_divider)
+    if (0 == cpf or  cpf > wrframegen::prefix_divider)
       throw runtime_error("prefix not in range");
 
     int vga_gain = vm["vgagain"].as<int>();
@@ -123,7 +124,9 @@ int main(int argc, char* argv[]) {
     hackrf_set_amp_enable(dev, amp_gain); // RF gain, 0-11 in 11dB steps
 
     //grcudp udp;
-    hrframesync fs(4'000'000, cpf);
+    //hackrf_start_rx(dev, receive_cb, &udp);
+
+    wrframesync fs(4'000'000, cpf);
     hackrf_start_rx(dev, receive_cb, &fs);
 
     cout << "Beacon rx control thread: enter EOF (Ctrl-D) or empty line to end." << endl;
