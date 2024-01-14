@@ -10,6 +10,7 @@
 #include <liquid/liquid.h>
 #include <cstddef>
 #include <vector>
+#include <cstdint>
 
 class wrframe {
 
@@ -50,10 +51,12 @@ class wrframegen : public wrframe {
 public:
   wrframegen(double sample_rate,
              std::size_t prefix_fraction, std::size_t phy_mode);
-  ~wrframegen();
+  virtual ~wrframegen();
+
   void assemble(const unsigned char* header,
                 const unsigned char* payload, std::size_t payload_len);
   bool write(std::complex<float>* buffer, std::size_t buffer_len);
+  void print();
 
   float sample_max;
 };
@@ -74,11 +77,14 @@ protected:
                        bool payload_valid, framesyncstats_s stats);
 
 public:
+  std::uintmax_t num_samples;
+
   wrframesync(double sample_rate, std::size_t prefix_fraction);
-  ~wrframesync();
+  virtual ~wrframesync();
   bool execute(std::complex<float>*   buffer, std::size_t buffer_len);
   bool execute(std::complex<uint8_t>* buffer, std::size_t buffer_len);
   bool execute(std::complex<int8_t>*  buffer, std::size_t buffer_len);
+  framedatastats_s get_framedatastats();
 };
 
 #endif // _WRANFRM_HPP

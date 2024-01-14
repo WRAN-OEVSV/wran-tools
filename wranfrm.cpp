@@ -121,11 +121,14 @@ wrframegen::wrframegen(double sample_rate, size_t prefix_fraction, size_t phy_mo
   fgp.fec1       = phy_prop[phy_mode-1].fec1;
 
   fg = ofdmflexframegen_create(subcarriers, prefix_len, taper_len, sca.data(), &fgp);
-  ofdmflexframegen_print(fg);
-  ofdmframe_print_sctype(sca.data(), subcarriers);
+  //ofdmflexframegen_print(fg);
+  //ofdmframe_print_sctype(sca.data(), subcarriers);
   sample_max = numeric_limits<float>::min();
 }
 
+void wrframegen::print() {
+  ofdmflexframegen_print(fg);
+}
 void wrframegen::assemble(const unsigned char* header, const unsigned char* payload, size_t payload_len) {
   ofdmflexframegen_assemble(fg, header, payload, payload_len);
   //ofdmflexframegen_print(fg);
@@ -144,7 +147,7 @@ bool wrframegen::write(complex<float>* buffer, size_t buffer_len) {
 
 wrframegen::~wrframegen() {
   ofdmflexframegen_destroy(fg);
-  cout << "sample_max = " << sample_max << ", 1/sample_max = " << 1/sample_max << endl;
+  //cout << "sample_max = " << sample_max << ", 1/sample_max = " << 1/sample_max << endl;
 }
 
 extern "C" {
@@ -158,40 +161,48 @@ extern "C" {
     return static_cast<wrframesync*>(_userdata)->callback(
           _header, _header_valid, _payload, _payload_len, _payload_valid,
           _stats);
-    return 0;
+    //return 0;
   }
 }
 
 wrframesync::wrframesync(double sample_rate, size_t prefix_fraction)
-  : wrframe(sample_rate, prefix_fraction) {
+  : wrframe(sample_rate, prefix_fraction), num_samples(0) {
   fs = ofdmflexframesync_create(subcarriers, prefix_len, taper_len,
                                 sca.data(), hrframesync_wrap_callback, this);
-  ofdmflexframesync_print(fs);
+  //ofdmflexframesync_print(fs);
 }
 
 wrframesync::~wrframesync() {
-  ofdmflexframesync_print(fs);
+  //cout << get_framedatastats().num_frames_detected << endl;
+  //ofdmflexframesync_print(fs);
   ofdmflexframesync_destroy(fs);
 }
 
 int wrframesync::callback(unsigned char* header, bool header_valid,
              unsigned char* payload, unsigned int payload_len,
              bool payload_valid, framesyncstats_s stats) {
-  cout << format("%6.1f, %6.1fe-6") % stats.rssi % (1e6*stats.cfo);
-  if (nullptr != payload) {
-    if (payload_valid)
-      cout << ", " << payload_len << ": " << string(reinterpret_cast<char*>(payload)).substr(0, payload_len);
-    else
-      cout << ", PAYLOAD INVALID";
+  cout << format("rssi: %6.1f dB, evm: %6.1f dB, cfo: %6.1f") % stats.rssi % stats.evm % stats.cfo;
+  if (header_valid) {
+      cout << ", header"; for (size_t n=0; n<8; ++n) cout << ", " << unsigned(header[n]);
+      if (nullptr != payload) {
+          if (payload_valid)
+            cout << ", payload " << payload_len << " octets";
+          else
+            cout << ", payload INVALID";
+        }
+      else
+        cout << ", payload MISSING";
     }
-  else
-    cout << ", PAYLOAD MISSING";
+  else {
+      cout << ", header MISSING";
+    }
   cout << endl;
   return 0;
 }
 
 bool wrframesync::execute(complex<float>* buffer, size_t buffer_len) {
   ofdmflexframesync_execute(fs, buffer, buffer_len);
+  num_samples += buffer_len;
   return true;
 }
 
@@ -211,3 +222,6 @@ bool wrframesync::execute(complex<int8_t>* buffer, size_t buffer_len) {
   return execute(fbuffer, buffer_len);
 }
 
+framedatastats_s wrframesync::get_framedatastats() {
+  return ofdmflexframesync_get_framedatastats(fs);
+}

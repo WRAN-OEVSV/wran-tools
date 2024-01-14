@@ -53,9 +53,25 @@ target_link_libraries(wrrx-sim
   Boost::system
 )
 
+add_executable(hrsim)
+
+target_sources(hrsim PRIVATE
+    wranfrm.cpp
+    wranfrm.hpp
+    hrsim.cpp
+    config.hpp.in
+)
+
+target_link_libraries(hrsim
+    PRIVATE
+    LiquidDSP
+    Boost::system
+)
+
 install(TARGETS
   wrbeacon-sim
   wrrx-sim
+  hrsim
 )
 
 find_package(LimeSuite)

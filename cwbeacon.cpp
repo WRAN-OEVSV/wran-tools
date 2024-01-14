@@ -19,6 +19,9 @@
 #include <iostream>
 using std::cout, std::cin, std::cerr, std::clog, std::endl;
 
+#include <iomanip>
+using std::put_time;
+
 #include <stdexcept>
 using std::runtime_error;
 
@@ -57,8 +60,11 @@ using std::mutex;
 using std::condition_variable;
 
 #include <chrono>
-using std::chrono::high_resolution_clock;
+using std::chrono::high_resolution_clock, std::chrono::system_clock;
 using namespace std::literals::chrono_literals;
+
+#include <ctime>
+using std::localtime;
 
 #include <csignal>
 using std::sig_atomic_t, std::signal;
@@ -113,6 +119,7 @@ mutex message_mutex;
 void transmit(stop_token stoken, lms_stream_t& tx_stream) {
 
   keyer k(60, tone, 0, 1.0, sample_rate);
+  uint64_t count = 0;
 
   const int buffer_size = 1024*8;
   complex<float> tx_buffer[buffer_size];
@@ -120,6 +127,9 @@ void transmit(stop_token stoken, lms_stream_t& tx_stream) {
   while(!stoken.stop_requested()) {
       size_t size = k.get_frame(tx_buffer, buffer_size);
       if (0 == size) {
+          auto in_time = system_clock::to_time_t(system_clock::now());
+          cout << put_time(localtime(&in_time), "%Y-%m-%d %X") << " " << ++count << endl;
+
           message_mutex.lock();
           k.send(message);
           message_mutex.unlock();
@@ -158,7 +168,7 @@ int main(int argc, char* argv[])
         ("version", "Print version.")
         ("mode", "TXwoBP, TX6m, TX2m, TX70cm", cxxopts::value<string>()->default_value("TXwoBP"))
         ("freq", "Center frequency.", cxxopts::value<double>()->default_value("52.9e6"))
-        ("txpwr", "Tx Pwr. in in dBm (-26dBm ... 10dBm)", cxxopts::value<int>()->default_value("-10"))
+        ("txpwr", "Tx Pwr. in in dBm (-26dBm ... 10dBm)", cxxopts::value<int>()->default_value("0"))
         ("tone", "Modulation freqeuncy.", cxxopts::value<double>()->default_value("100e3"))
         ("message", "Beacon message", cxxopts::value<string>()->default_value("OE1XTU"))
         ;
