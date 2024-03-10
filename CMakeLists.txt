@@ -126,6 +126,10 @@ if (LimeSuite_FOUND)
     wranfrm.hpp
     wrbeacon.cpp
     config.hpp.in
+    morsecode.cpp
+    morsecode.hpp
+    keyer.cpp
+    keyer.hpp
   )
 
   target_link_libraries(wrbeacon

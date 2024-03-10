@@ -11,6 +11,7 @@
 
 #include "config.hpp"
 #include "hamranfrm.hpp"
+#include "keyer.hpp"
 
 #include <cxxopts.hpp>
 
@@ -111,18 +112,20 @@ const double sample_rate = 4e6; // lime specific
 atomic<uint64_t> rx_timestamp      = 0; // latest timestamp from rx, we know of
 atomic<size_t>   cpf               = 0; // cyclic prefix len, 0 ... prefix_divider
 atomic<size_t>   phy_mode          = 1; // physical layer mode;
-
-// this is a hack, proper implementation pending
-string global_message;
+atomic<double>   tone          = 100e3; // Hz
+string message;                         // the beacon text.
+mutex message_mutex;
 
 // Note: LMS_SendStream and LMS_RecvStream are the ONLY thread safe functions
 // of limesuite.
 // The transmit thread:
 void transmit(stop_token stoken, lms_stream_t& tx_stream, uint64_t start_time) {
 
+  unsigned int count = 0;
+  //keyer k(60, tone, 0, 1.0, sample_rate);
+
   float sample_max = numeric_limits<float>::min();
 
-  string message = global_message; // I know this is unproteced
   unsigned char header[8] = {0,0,0,0,0,0,0,0};
 
   hrframegen fg(cpf, phy_mode);
@@ -195,6 +198,7 @@ int main(int argc, char* argv[])
 {
 
   signal(SIGINT, signal_handler); // install handler to catch ctrl-c
+  signal(SIGTERM, signal_handler);
 
   max_LogLevel = lime::LOG_LEVEL_INFO;
   lime::registerLogHandler(&limeSuiteLogHandler);
@@ -209,6 +213,7 @@ int main(int argc, char* argv[])
         ("version", "Print version.")
         ("freq", "Center frequency.", cxxopts::value<double>()->default_value("53e6"))
         ("txpwr", "Tx Pwr. in in dBm (-26dBm ... 10dBm)", cxxopts::value<int>()->default_value("0"))
+        ("tone", "Modulation freqeuncy.", cxxopts::value<double>()->default_value("100e3"))
         ("cpf", "Cyclic prefix len", cxxopts::value<size_t>()->default_value(("1")))
         ("phy", "Physical layer mode: 1 ... 14", cxxopts::value<size_t>()->default_value("2"))
         ("message", "Beacon message", cxxopts::value<string>()->default_value("OE1XTU"))
@@ -229,9 +234,7 @@ int main(int argc, char* argv[])
         return EXIT_SUCCESS;
     }
 
-    // copy to global variable, this is preliminary and will be replaced
-    // TODO: replace by message queue
-    global_message = vm["message"].as<string>();
+    message = vm["message"].as<string>();  // no need for message_mutex yet.
 
     cpf = vm["cpf"].as<size_t>();
     if (0 == cpf or  cpf > hrframegen::prefix_divider)
@@ -245,7 +248,9 @@ int main(int argc, char* argv[])
     double freq       = vm["freq"].as<double>();
     double txpwr      = vm["txpwr"].as<int>();
 
-    cout << "wrbeacon. Version " PROJECT_VER << endl;
+    tone  = vm["tone"].as<double>();
+
+    cout << "hrbeacon. Version " PROJECT_VER << endl;
 
     cout << "Parameters:" << endl;
     cout << format("Freq:       %g MHz\n") % (1e-6*freq);
@@ -253,6 +258,8 @@ int main(int argc, char* argv[])
     cout << format("Samplerate: %g MHz\n") % (1e-6*sample_rate);
     cout << format("Prefix len: %2d\n")    % cpf;
     cout << format("Phymode:    %2d\n")    % phy_mode;
+    cout << format("Tone: %3.3f kHz\n")    % (1e-3*tone);
+    cout << format("Message: %s\n")        % message;
     cout << endl;
 
     // Try to open devices until one is available or fail if none.
@@ -280,8 +287,6 @@ int main(int argc, char* argv[])
     LMS_GPIODirRead(dev, &gpio_val, 1);
     lime::debug("GPIODIR: 0x%02x", unsigned(gpio_val));
 
-    gpio_val = 0xb3; // 0xbf; //0xb3;
-    LMS_GPIOWrite(dev, &gpio_val, 1);
 
 // This is the fast, data synchronous TX/TX signaling
 #if 0
@@ -343,21 +348,28 @@ int main(int argc, char* argv[])
     LMS_StartStream(&rx_stream);
     LMS_StartStream(&tx_stream);
 
+    // turn on the PA
+    gpio_val = 0xb3; // 0xbf; //0xb3;
+    LMS_GPIOWrite(dev, &gpio_val, 1);
+
     // start the threads
     jthread rx_thread(receive, ref(rx_stream), ref(tx_stream));
     // transmit is started from inside receive thread
 
-    cout << "Beacon control thread: enter EOF (Ctrl-D) or empty line to end." << endl;
-    string line;
-    while(getline(cin, line)) {
-        if (line.empty()) break;
+    cout << "hrbeacon control thread: stop with SIGINT (Ctrl-C) or SIGTERM" << endl;
+    while (0 == signal_status) {
+        sleep_for(100ms);
     }
-    cout << "Exiting ..." << endl;
+    cout << "Caught signal " << signal_status << ", exiting ..." << endl;
 
     rx_thread.request_stop();
     rx_thread.join();
 
     cout << "Cleaning up ..." << endl;
+
+    // turn off PA
+    gpio_val = 0x00;
+    LMS_GPIOWrite(dev, &gpio_val, 1);
 
     LMS_StopStream(&tx_stream);
     LMS_DestroyStream(dev, &tx_stream);
@@ -366,9 +378,6 @@ int main(int argc, char* argv[])
     LMS_StopStream(&rx_stream);
     LMS_DestroyStream(dev, &rx_stream);
     LMS_EnableChannel(dev, LMS_CH_RX, 0, false);
-
-    gpio_val = 0x00;
-    LMS_GPIOWrite(dev, &gpio_val, 1);
 
     LMS_Close(dev);
     dev = nullptr;

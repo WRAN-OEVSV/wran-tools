@@ -141,7 +141,6 @@ void transmit(stop_token stoken, lms_stream_t& tx_stream) {
           k.space(fill_time);
           size = k.get_frame(tx_buffer, buffer_size);
         }
-
     LMS_SendStream(&tx_stream, tx_buffer, size, nullptr, 1000);
   }
 

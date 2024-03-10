@@ -174,7 +174,7 @@ int main(int argc, char* argv[])
     if (0 == phy_mode or phy_mode > 14)
       throw runtime_error("invalid phymode requested");
 
-    float noise_floor  = -60.0f;
+    //float noise_floor  = -60.0f;
     // seed for random message
     uint32_t seed      = 230361;
     size_t packet_size = vm["packsiz"].as<size_t>();
@@ -186,7 +186,7 @@ int main(int argc, char* argv[])
       cout << format("    prefix frac         :   %-u\n")    % cpf;
       cout << format("    phymode             :   %-u\n")    % phy_mode;
       cout << format("    samplerate          :   %g MHz\n") % (1e-6*sample_rate);
-      cout << format("    noise_floor         :   %g dB\n")  % noise_floor;
+      //cout << format("    noise_floor         :   %g dB\n")  % noise_floor;
       cout << format("    packet size         :   %-u\n")    % packet_size;
       fg.print();
       cout << endl;
@@ -206,7 +206,8 @@ int main(int argc, char* argv[])
         wrframesync_stats fs(sample_rate, cpf, seed);
 
         channel_cccf channel = channel_cccf_create();
-        channel_cccf_add_awgn(channel, noise_floor, SNRdB);
+        // keep the signal at constant level, but lower the noise fllor
+        channel_cccf_add_awgn(channel, -SNRdB, SNRdB);
 
         for (size_t f=0; f<10'000; ++f) { // frame loop
             // create a message frame, restart on frame number 0

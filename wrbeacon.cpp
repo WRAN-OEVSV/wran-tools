@@ -11,6 +11,7 @@
 
 #include "config.hpp"
 #include "wranfrm.hpp"
+#include "keyer.hpp"
 
 #include <cxxopts.hpp>
 
@@ -21,7 +22,10 @@
 using std::size_t;
 
 #include <iostream>
-using std::cout, std::cerr, std::clog, std::cin, std::endl;
+using std::cout, std::cerr, std::clog, std::cin, std::endl, std::flush;
+
+#include <iomanip>
+using std::put_time;
 
 #include <fstream>
 using std::ofstream;
@@ -74,8 +78,11 @@ using std::ref;
 
 #include <chrono>
 using std::chrono::high_resolution_clock, std::chrono::duration_cast,
-  std::chrono::nanoseconds;
+  std::chrono::nanoseconds, std::chrono::system_clock;
 using namespace std::literals::chrono_literals;
+
+#include <ctime>
+using std::localtime;
 
 #include <boost/format.hpp>
 using boost::format, boost::str;
@@ -111,9 +118,11 @@ const double sample_rate = 4e6; // lime specific
 atomic<uint64_t> rx_timestamp      = 0; // latest timestamp from rx, we know of
 atomic<size_t>   cpf               = 0; // cyclic prefix len, 0 ... prefix_divider
 atomic<size_t>   phy_mode          = 1; // physical layer mode;
-
-// this is a hack, proper implementation pending
-string global_message;
+atomic<double>   tone              = 0; // Hz CW beacon frequency
+atomic<double>   duration       = 10.0; // duration of beacon signals in seconds
+string           message; // the beacon text
+mutex            message_mutex;
+atomic<bool>     is_interactive    = true;
 
 // Note: LMS_SendStream and LMS_RecvStream are the ONLY thread safe functions
 // of limesuite.
@@ -122,41 +131,85 @@ void transmit(stop_token stoken, lms_stream_t& tx_stream, uint64_t start_time) {
 
   float sample_max = numeric_limits<float>::min();
 
-  string message = global_message; // I know this is unproteced
+  // Set up the OFDM frame ressources.
   unsigned char header[8] = {0,0,0,0,0,0,0,0};
-
   wrframegen fg(sample_rate, cpf, phy_mode);
   uint32_t samp_per_frame = sample_rate*wrframegen::frame_len;
 
+  // set up the CW keyer
+  keyer k(60, tone, 0, 1.0, sample_rate);
+
+  // Set up the beacon oscillator.
+  // The oscillator is implemented by rotation of a complex<double>
+  // to lower the noise floor compared to the basic example.
+  // Phase increment per step:
+  complex<double> w = exp(2.0i*acos(-1)*double(tone/sample_rate));
+  // Initialize the oscillator:
+  complex<double> y = conj(w);
+
+  // the transmit buffer and time stamps
   vector<complex<float>> tx_buffer(fg.subcarriers + fg.prefix_len);
   uint64_t tx_timestamp = start_time;
   lms_stream_meta_t meta;
 
-  while(!stoken.stop_requested()) {
-      tx_timestamp += samp_per_frame;
-      while(not stoken.stop_requested()
-            and rx_timestamp + samp_per_frame < tx_timestamp) {
-          sleep_for(10us); // In a bidirectionional setting waiting here could
-                           // be replaced by transmit data preparation.
-        }
+  // total cycle counter
+  unsigned int count = 0;
 
-      if (not stoken.stop_requested()) {
-          fg.assemble(header, reinterpret_cast<unsigned char*>(message.data()), message.size());
-          bool last = fg.write(tx_buffer.data(), tx_buffer.size());
-          meta.timestamp = tx_timestamp;
-          meta.waitForTimestamp = true;
-          while (not last) {
+  while(!stoken.stop_requested()) {
+      if (!is_interactive) {
+          auto in_time = system_clock::to_time_t(system_clock::now());
+          cout << put_time(localtime(&in_time), "%Y-%m-%d %X") << " " << ++count << endl;
+        }
+      // load message
+      message_mutex.lock();
+      k.send(message);
+      message_mutex.unlock();
+      // send CW signal
+      size_t size = k.get_frame(tx_buffer.data(), tx_buffer.size());
+      while(0 != size && !stoken.stop_requested()) {
+          LMS_SendStream(&tx_stream, tx_buffer.data(), tx_buffer.size(), nullptr, 1000);
+          size = k.get_frame(tx_buffer.data(), tx_buffer.size());
+        }
+      // send sinus carrier for duration seconds
+      for (size_t n=0; n<size_t(duration*sample_rate/tx_buffer.size()); ++n) {
+          if (stoken.stop_requested())
+            break;
+          for (size_t n = 0; n<tx_buffer.size(); ++n)
+              tx_buffer[n] = (y*=w);
+          LMS_SendStream(&tx_stream, tx_buffer.data(), tx_buffer.size(), nullptr, 1000);
+        }
+      // send OFDM frames for duration seconds
+      tx_timestamp = rx_timestamp;
+      for (size_t n=0; n<size_t(duration/fg.frame_len); ++n) {
+          if (stoken.stop_requested())
+            break;
+          tx_timestamp += samp_per_frame;
+          while(not stoken.stop_requested()
+                and rx_timestamp + samp_per_frame < tx_timestamp) {
+              sleep_for(10us); // In a bidirectionional setting waiting here could
+              // be replaced by transmit data preparation.
+            }
+
+          if (not stoken.stop_requested()) {
+              message_mutex.lock();
+              fg.assemble(header, reinterpret_cast<unsigned char*>(message.data()), message.size());
+              message_mutex.unlock();
+              bool last = fg.write(tx_buffer.data(), tx_buffer.size());
+              meta.timestamp = tx_timestamp;
+              meta.waitForTimestamp = true;
+              while (not last) {
+                  for (size_t i=0; i<tx_buffer.size(); ++i) sample_max = max(sample_max, abs(tx_buffer[i]));
+                  LMS_SendStream(&tx_stream, tx_buffer.data(), tx_buffer.size(), &meta, 1000);
+                  // TODO: I do not yet understand the write function completely.
+                  // The documentaion and source of liquid appear incomplete.
+                  last = fg.write(tx_buffer.data(), tx_buffer.size());
+                  meta.waitForTimestamp = false;
+                  meta.flushPartialPacket = false;
+                }
+              meta.flushPartialPacket = true;
               for (size_t i=0; i<tx_buffer.size(); ++i) sample_max = max(sample_max, abs(tx_buffer[i]));
               LMS_SendStream(&tx_stream, tx_buffer.data(), tx_buffer.size(), &meta, 1000);
-              // TODO: I do not yet understand the write function completely.
-              // The documentaion and source of liquid appear incomplete.
-              last = fg.write(tx_buffer.data(), tx_buffer.size());
-              meta.waitForTimestamp = false;
-              meta.flushPartialPacket = false;
             }
-          meta.flushPartialPacket = true;
-          for (size_t i=0; i<tx_buffer.size(); ++i) sample_max = max(sample_max, abs(tx_buffer[i]));
-          LMS_SendStream(&tx_stream, tx_buffer.data(), tx_buffer.size(), &meta, 1000);
         }
     }
 
@@ -203,9 +256,11 @@ int main(int argc, char* argv[])
         ("version", "Print version.")
         ("freq", "Center frequency.", cxxopts::value<double>()->default_value("53e6"))
         ("txpwr", "Tx Pwr. in in dBm (-26dBm ... 10dBm)", cxxopts::value<int>()->default_value("0"))
+        ("tone", "Modulation freqeuncy.", cxxopts::value<double>()->default_value("0"))
+        ("duration", "Duration of beacon signals in seconds", cxxopts::value<double>()->default_value("10.0"))
         ("cpf", "Cyclic prefix len: 0...50", cxxopts::value<size_t>()->default_value(("12")))
         ("phy", "Physical layer mode: 1 ... 14", cxxopts::value<size_t>()->default_value("2"))
-        ("message", "Beacon message", cxxopts::value<string>()->default_value("OE1XTU"))
+        ("message", "Beacon message", cxxopts::value<string>())
         ;
     options.parse_positional({"message"});
     options.positional_help("message");
@@ -223,9 +278,14 @@ int main(int argc, char* argv[])
         return EXIT_SUCCESS;
     }
 
-    // copy to global variable, this is preliminary and will be replaced
-    // TODO: replace by message queue
-    global_message = vm["message"].as<string>();
+    if (vm.count("message")) {
+        message = vm["message"].as<string>(); // no need for message_mutex yet.
+        is_interactive = false;
+      }
+    else {
+        message = "OE1XTU Das Pferd frisst keinen Gurkensalat.";
+        is_interactive = true;
+      }
 
     cpf = vm["cpf"].as<size_t>();
     if (0 == cpf or  cpf > wrframegen::prefix_divider)
@@ -239,14 +299,20 @@ int main(int argc, char* argv[])
     double freq       = vm["freq"].as<double>();
     double txpwr      = vm["txpwr"].as<int>();
 
+    tone = vm["tone"].as<double>();
+    duration = vm["duration"].as<double>();
+
     cout << "wrbeacon. Version " PROJECT_VER << endl;
 
     cout << "Parameters:" << endl;
-    cout << format("Freq:       %g MHz\n") % (1e-6*freq);
-    cout << format("Peak Pwr:   %g dBm\n")         % vm["txpwr"].as<int>();
-    cout << format("Prefix len: %2d\n")             % cpf;
-    cout << format("Samplerate: %g MHz\n")          % (1e-6*sample_rate);
-    cout << format("Phymode:    %2d\n")             % phy_mode;
+    cout << format("Freq:       %g MHz\n")     % (1e-6*freq);
+    cout << format("Peak Pwr:   %g dBm\n")     % vm["txpwr"].as<int>();
+    cout << format("Prefix len: %2d\n")        % cpf;
+    cout << format("Samplerate: %g MHz\n")     % (1e-6*sample_rate);
+    cout << format("Phymode:    %2d\n")        % phy_mode;
+    cout << format("Tone: %3.3f kHz\n")        % (1e-3*tone);
+    cout << format("Duration: %.1f s\n")       % duration;
+    cout << format("Message: %s\n")            % message;
     cout << endl;
 
     // Try to open devices until one is available or fail if none.
@@ -274,10 +340,8 @@ int main(int argc, char* argv[])
     LMS_GPIODirRead(dev, &gpio_val, 1);
     lime::debug("GPIODIR: 0x%02x", unsigned(gpio_val));
 
-    gpio_val = 0x03; // 0xbf; //0xb3;
-    LMS_GPIOWrite(dev, &gpio_val, 1);
 
-// This is the fast, data synchronous TX/TX signaling
+// This is the fast, data synchronous RX/TX signaling
 #if 0
     // Set up TX indicator on GPIO0.
     // https://github.com/myriadrf/LimeSDR-Mini-v2_GW/issues/3
@@ -331,23 +395,43 @@ int main(int argc, char* argv[])
     LMS_Calibrate(dev,         LMS_CH_RX, 0, 2.5e6, 0);
     LMS_Calibrate(dev,         LMS_CH_TX, 0, 2.5e6, 0);
 
-
     LMS_SetupStream(dev, &rx_stream);
     LMS_SetupStream(dev, &tx_stream);
 
     LMS_StartStream(&rx_stream);
     LMS_StartStream(&tx_stream);
 
+    // turn on PA
+    gpio_val = 0x03; // 0xbf; //0xb3;
+    LMS_GPIOWrite(dev, &gpio_val, 1);
+
     // start the threads
     jthread rx_thread(receive, ref(rx_stream), ref(tx_stream));
     // transmit is started from inside receive thread
 
-    cout << "Beacon control thread: enter EOF (Ctrl-D) or empty line to end." << endl;
-    string line;
-    while(getline(cin, line)) {
-        if (line.empty()) break;
-    }
+    if (is_interactive) {
+        cout << "Beacon control thread: enter message or EOF (Ctrl-D) or empty line to end." << endl;
+        string line;
+        cout << "> " << flush;
+        while(getline(cin, line)) {
+            if (line.empty()) break;
+            message_mutex.lock();
+            message = line;
+            message_mutex.unlock();
+            cout << "> " << flush;
+          }
+      } else {
+        cout << "Beaconcontrol thread: stop with SIGINT (Ctrl-C) or SIGTERM" << endl;
+        while (0 == signal_status) {
+            sleep_for(100ms);
+        }
+        cout << "Caught signal " << signal_status << ", exiting ..." << endl;
+      }
     cout << "Exiting and cleaning up." << endl;
+
+    // turn off PA
+    gpio_val = 0x00;
+    LMS_GPIOWrite(dev, &gpio_val, 1);
 
     rx_thread.request_stop();
     rx_thread.join();
@@ -360,8 +444,6 @@ int main(int argc, char* argv[])
     LMS_DestroyStream(dev, &rx_stream);
     LMS_EnableChannel(dev, LMS_CH_RX, 0, false);
 
-    gpio_val = 0x00;
-    LMS_GPIOWrite(dev, &gpio_val, 1);
 
     LMS_Close(dev);
     dev = nullptr;
