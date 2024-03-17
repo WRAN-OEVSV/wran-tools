@@ -10,7 +10,11 @@
 #include "config.hpp"
 #include "wranfrm.hpp"
 
-#include <cxxopts.hpp>
+#include <boost/program_options.hpp>
+namespace po = boost::program_options;
+using po::options_description, po::value, po::variables_map, po::store,
+  po::positional_options_description, po::command_line_parser, po::notify,
+  po::parse_command_line;
 
 #include <cstdint>
 using std::uint8_t, std::uint32_t, std::uint64_t, std::uintmax_t;
@@ -144,20 +148,22 @@ int main(int argc, char* argv[])
 
   try {
 
-    cxxopts::Options options("wrbeacon", "Beacon generator for WRAN project.");
-    options.add_options()
-        ("h,help", "Print usage information.")
+    options_description opts("Options");
+    opts.add_options()
+        ("help,h", "Print usage information.")
         ("version", "Print version.")
-        ("f,filename", "Output file name", cxxopts::value<path>()->default_value("beacon.cfile"))
-        ("cpf", "Cyclic prefix len: 0...50", cxxopts::value<size_t>()->default_value(("12")))
-        ("phy", "Physical layer mode: 1 ... 14", cxxopts::value<size_t>()->default_value("1"))
-        ("s,packsiz", "Packet size", cxxopts::value<size_t>()->default_value("256"))
+        ("filename,f", value<path>()->default_value("beacon.cfile"), "Output file name")
+        ("cpf",        value<size_t>()->default_value(12), "Cyclic prefix len: 0...50")
+        ("phy",        value<size_t>()->default_value(1),  "Physical layer mode: 1 ... 14")
+        ("s,packsiz",  value<size_t>()->default_value(256), "Packet size")
         ;
 
-    auto vm = options.parse(argc, argv);
-
+    //auto vm = options.parse(argc, argv);
+    variables_map vm;
+    store(parse_command_line(argc, argv, opts), vm);
     if (vm.count("help")) {
-        cout << options.help() << endl;
+        cout << "wrbeacon beacon generator for WRAN project." << endl;
+        cout << opts << endl;
         return EXIT_SUCCESS;
     }
 

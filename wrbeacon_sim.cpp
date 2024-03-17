@@ -11,7 +11,11 @@
 #include "config.hpp"
 #include "wranfrm.hpp"
 
-#include <cxxopts.hpp>
+#include <boost/program_options.hpp>
+namespace po = boost::program_options;
+using po::options_description, po::value, po::variables_map, po::store,
+  po::positional_options_description, po::command_line_parser, po::notify,
+  po::parse_command_line;
 
 #include <cstdlib>
 using std::size_t;
@@ -63,23 +67,34 @@ int main(int argc, char* argv[])
 
   try {
 
-    cxxopts::Options options("wrbeacon", "Beacon generator for WRAN project.");
-    options.add_options()
-        ("h,help", "Print usage information.")
+    options_description opts("Options");
+    opts.add_options()
+        ("help,h", "Print usage information.")
         ("version", "Print version.")
-        ("f,filename", "Output file name", cxxopts::value<path>()->default_value("beacon.cfile"))
-        ("cpf", "Cyclic prefix len: 0...50", cxxopts::value<size_t>()->default_value(("12")))
-        ("phy", "Physical layer mode: 1 ... 14", cxxopts::value<size_t>()->default_value("1"))
-        ("message", "Beacon message", cxxopts::value<string>()->default_value("OE1XTU"));
+        ("filename,f", value<path>()->default_value("beacon.cfile"), "Output file name")
+        ("cpf", value<size_t>()->default_value(12), "Cyclic prefix len: 0...50")
+        ("phy", value<size_t>()->default_value(1), "Physical layer mode: 1 ... 14")
         ;
-    options.parse_positional({"message"});
-    options.positional_help("message");
-    options.show_positional_help();
 
-    auto vm = options.parse(argc, argv);
+    options_description pos_opts;
+    pos_opts.add_options()
+        ("message", value<string>()->default_value("OE1XTU"), "Beacon message")
+        ;
+    positional_options_description pos;
+    pos.add("message", 1);
+
+    options_description all_opts;
+    all_opts.add(opts).add(pos_opts);
+
+    variables_map vm;
+    store(command_line_parser(argc, argv).options(all_opts).positional(pos).run(), vm);
+    notify(vm);
 
     if (vm.count("help")) {
-        cout << options.help() << endl;
+        cout << "wrbeacon_sim beacon simulation for WRAN project." << endl;
+        cout << "Usage: wrbeacon_sim [options] [message]" << endl;
+        cout << "  message default is " << vm["message"].as<string>() << endl;
+        cout << opts << endl;
         return EXIT_SUCCESS;
     }
 
@@ -117,7 +132,7 @@ int main(int argc, char* argv[])
     vector<complex<float>> tx_buffer(fg.subcarriers + fg.prefix_len);
     size_t tx_timestamp = 0;
 
-    for (size_t n=0; n<10; ++n) {
+    for (size_t n=0; n<100; ++n) {
         tx_timestamp = 0;
         fg.assemble(header, reinterpret_cast<unsigned char*>(global_message.data()), global_message.size());
         bool last = fg.write(tx_buffer.data(), tx_buffer.size());

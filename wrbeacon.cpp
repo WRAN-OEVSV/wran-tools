@@ -13,7 +13,10 @@
 #include "wranfrm.hpp"
 #include "keyer.hpp"
 
-#include <cxxopts.hpp>
+#include <boost/program_options.hpp>
+namespace po = boost::program_options;
+using po::options_description, po::value, po::variables_map, po::store,
+  po::positional_options_description, po::command_line_parser, po::notify;
 
 #include <lime/LimeSuite.h>
 #include <lime/Logger.h>
@@ -120,7 +123,7 @@ atomic<size_t>   cpf               = 0; // cyclic prefix len, 0 ... prefix_divid
 atomic<size_t>   phy_mode          = 1; // physical layer mode;
 atomic<double>   tone              = 0; // Hz CW beacon frequency
 atomic<double>   duration       = 10.0; // duration of beacon signals in seconds
-string           message; // the beacon text
+string           message;               // the beacon text
 mutex            message_mutex;
 atomic<bool>     is_interactive    = true;
 
@@ -147,12 +150,12 @@ void transmit(stop_token stoken, lms_stream_t& tx_stream, uint64_t start_time) {
   // Initialize the oscillator:
   complex<double> y = conj(w);
 
-  // the transmit buffer and time stamps
+  // The transmit buffer and time stamps.
   vector<complex<float>> tx_buffer(fg.subcarriers + fg.prefix_len);
   uint64_t tx_timestamp = start_time;
   lms_stream_meta_t meta;
 
-  // total cycle counter
+  // The total cycle counter.
   unsigned int count = 0;
 
   while(!stoken.stop_requested()) {
@@ -160,17 +163,17 @@ void transmit(stop_token stoken, lms_stream_t& tx_stream, uint64_t start_time) {
           auto in_time = system_clock::to_time_t(system_clock::now());
           cout << put_time(localtime(&in_time), "%Y-%m-%d %X") << " " << ++count << endl;
         }
-      // load message
+      // Load the message.
       message_mutex.lock();
       k.send(message);
       message_mutex.unlock();
-      // send CW signal
+      // Send the CW signal.
       size_t size = k.get_frame(tx_buffer.data(), tx_buffer.size());
       while(0 != size && !stoken.stop_requested()) {
           LMS_SendStream(&tx_stream, tx_buffer.data(), tx_buffer.size(), nullptr, 1000);
           size = k.get_frame(tx_buffer.data(), tx_buffer.size());
         }
-      // send sinus carrier for duration seconds
+      // Send a sinus carrier for duration seconds.
       for (size_t n=0; n<size_t(duration*sample_rate/tx_buffer.size()); ++n) {
           if (stoken.stop_requested())
             break;
@@ -178,7 +181,7 @@ void transmit(stop_token stoken, lms_stream_t& tx_stream, uint64_t start_time) {
               tx_buffer[n] = (y*=w);
           LMS_SendStream(&tx_stream, tx_buffer.data(), tx_buffer.size(), nullptr, 1000);
         }
-      // send OFDM frames for duration seconds
+      // Send OFDM frames for duration seconds.
       tx_timestamp = rx_timestamp;
       for (size_t n=0; n<size_t(duration/fg.frame_len); ++n) {
           if (stoken.stop_requested())
@@ -250,26 +253,37 @@ int main(int argc, char* argv[])
 
   try {
 
-    cxxopts::Options options("wrbeacon", "Beacon generator for WRAN project.");
-    options.add_options()
-        ("h,help", "Print usage information.")
+    options_description opts("Options");
+    opts.add_options()
+        ("help,h", "Print usage information.")
         ("version", "Print version.")
-        ("freq", "Center frequency.", cxxopts::value<double>()->default_value("53e6"))
-        ("txpwr", "Tx Pwr. in in dBm (-26dBm ... 10dBm)", cxxopts::value<int>()->default_value("0"))
-        ("tone", "Modulation freqeuncy.", cxxopts::value<double>()->default_value("0"))
-        ("duration", "Duration of beacon signals in seconds", cxxopts::value<double>()->default_value("10.0"))
-        ("cpf", "Cyclic prefix len: 0...50", cxxopts::value<size_t>()->default_value(("12")))
-        ("phy", "Physical layer mode: 1 ... 14", cxxopts::value<size_t>()->default_value("2"))
-        ("message", "Beacon message", cxxopts::value<string>())
+        ("freq",     value<double>()->default_value(53e6), "Center frequency in Hz.")
+        ("txpwr",    value<int>()->default_value(0),       "Tx Pwr. in in dBm (-26dBm ... 10dBm)")
+        ("tone",     value<double>()->default_value(0),    "Modulation freqeuncy in Hz.")
+        ("duration", value<double>()->default_value(10.0), "Duration of beacon signals in seconds")
+        ("cpf",      value<size_t>()->default_value(12),   "Cyclic prefix len: 0...50")
+        ("phy",      value<size_t>()->default_value(2),    "Physical layer mode: 1 ... 14")
         ;
-    options.parse_positional({"message"});
-    options.positional_help("message");
-    options.show_positional_help();
 
-    auto vm = options.parse(argc, argv);
+    options_description pos_opts;
+    pos_opts.add_options()
+        ("message",  value<string>(),                      "Beacon message")
+        ;
+    positional_options_description pos;
+    pos.add("message", 1);
+
+    options_description all_opts;
+    all_opts.add(opts).add(pos_opts);
+
+    variables_map vm;
+    store(command_line_parser(argc, argv).options(all_opts).positional(pos).run(), vm);
+    notify(vm);
 
     if (vm.count("help")) {
-        cout << options.help() << endl;
+        cout << "Beacon generator for WRAN project." << endl;
+        cout << "Usage: wrbeacon [options] [message]" << endl;
+        cout << "  Interactive mode if message is omitted." << endl;
+        cout << opts << endl;
         return EXIT_SUCCESS;
     }
 
@@ -421,7 +435,7 @@ int main(int argc, char* argv[])
             cout << "> " << flush;
           }
       } else {
-        cout << "Beaconcontrol thread: stop with SIGINT (Ctrl-C) or SIGTERM" << endl;
+        cout << "Beaconcontrol thread: stop with SIGINT (Ctrl-C) or SIGTERM." << endl;
         while (0 == signal_status) {
             sleep_for(100ms);
         }

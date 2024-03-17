@@ -11,7 +11,13 @@
 
 #include "config.hpp"
 
-#include <cxxopts.hpp>
+//#include <cxxopts.hpp>
+#include <boost/program_options.hpp>
+namespace po = boost::program_options;
+using po::options_description, po::value, po::variables_map, po::store,
+  po::positional_options_description, po::command_line_parser, po::notify,
+  po::parse_command_line;
+
 
 #include <lime/LimeSuite.h>
 #include <lime/Logger.h>
@@ -171,23 +177,29 @@ int main(int argc, char* argv[])
 
   try {
 
-    cxxopts::Options options("wrsiggen", "WRAN signal generator tool.");
-    options.add_options()
-        ("h,help", "Print usage information.")
+    options_description opts("Options");
+    opts.add_options()
+        ("help,h", "Print usage information.")
         ("version", "Print version.")
-        ("mode", "TXwoBP, TX6m, TX2m, TX70cm", cxxopts::value<string>()->default_value("TXwoBP"))
-        ("freq", "Center frequency.", cxxopts::value<double>()->default_value("52.9e6"))
-        ("txpwr", "Tx Pwr. in in dBm (-26dBm ... 10dBm)", cxxopts::value<int>()->default_value("0"))
-        ("tone", "Modulation freqeuncy.", cxxopts::value<double>()->default_value("100e3"))
+        ("mode",  value<string>()->default_value("TXwoBP"), "TXwoBP, TX6m, TX2m, TX70cm")
+        ("freq",  value<double>()->default_value(52.9e6),   "Center frequency.")
+        ("txpwr", value<int>()->default_value(0),           "Tx Pwr. in in dBm (-26dBm ... 10dBm)")
+        ("tone",  value<double>()->default_value(100e3),    "Modulation freqeuncy.")
         ;
-    options.parse_positional({"mode", "freq", "txpwr", "tone"});
-    options.positional_help("mode freq gain tone");
-    options.show_positional_help();
 
-    auto vm = options.parse(argc, argv);
+    variables_map vm;
+    store(parse_command_line(argc, argv, opts), vm);
+    notify(vm);
+
+//    options.parse_positional({"mode", "freq", "txpwr", "tone"});
+//    options.positional_help("mode freq gain tone");
+//    options.show_positional_help();
+
+//    auto vm = options.parse(argc, argv);
 
     if (vm.count("help")) {
-        cout << options.help() << endl;
+        cout << "wrsiggen WRAN signal generator tool." << endl;
+        cout << opts << endl;
         return EXIT_SUCCESS;
     }
 

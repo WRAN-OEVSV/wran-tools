@@ -12,7 +12,11 @@
 
 #include <rtl-sdr.h>
 
-#include <cxxopts.hpp>
+#include <boost/program_options.hpp>
+namespace po = boost::program_options;
+using po::options_description, po::value, po::variables_map, po::store,
+  po::positional_options_description, po::command_line_parser, po::notify,
+  po::parse_command_line;
 
 #include <cstdlib>
 using std::size_t;
@@ -38,6 +42,9 @@ using std::string, std::getline;
 
 #include <vector>
 using std::vector;
+
+#include <limits>
+using std::numeric_limits;
 
 #include <array>
 using std::array;
@@ -77,12 +84,38 @@ namespace {
 
 const double sample_rate = 2.4e6; // rtlsdr specific
 
-size_t cpf      = 0;
-//size_t phy_mode = 1;
+atomic<size_t> cpf      = 0; // cyclic prefix len, 0 ... prefix_divider
 
 complex<float> buf_4MHz[40*512];   // 24*512*5/3
 complex<float> buf_2_4MHz[24*512]; // 24*512
 rresamp_cccf rs;
+
+class rxframe : public wrframesync {
+
+  size_t num_valid_frames;
+
+public:
+  rxframe(double sample_rate, size_t prefix_fraction)
+    : wrframesync(sample_rate, prefix_fraction),
+      num_valid_frames(0) {
+  }
+
+protected:
+  int callback(unsigned char* header, bool header_valid,
+                             unsigned char* payload, unsigned int payload_len,
+                             bool payload_valid, framesyncstats_s stats) {
+    //wrframesync::callback(header, header_valid, payload, payload_len, payload_valid, stats);
+    cout << format("rssi: %6.1f dB") % stats.rssi;
+    if (payload_valid) {
+        ++num_valid_frames;
+        cout << format(" : payload %6d : ") % num_valid_frames;
+        for (unsigned n =0; n<payload_len; ++n) cout << payload[n];
+
+      }
+    cout << endl;
+    return 0;
+  }
+};
 
 void receive_cb(unsigned char*buf, uint32_t len, void* ctx) {
   wrframesync& fs (*static_cast<wrframesync*>(ctx));
@@ -93,7 +126,7 @@ void receive_cb(unsigned char*buf, uint32_t len, void* ctx) {
 }
 
 void receive(stop_token stoken, rtlsdr_dev_t* dev) {
-  wrframesync fs(sample_rate*5/3, cpf);
+  rxframe fs(sample_rate*5/3, cpf);
   // We need to resample, due to a bug in liquiddsp.
   rs = rresamp_cccf_create_default(40*512, 24*512);
   rtlsdr_read_async(dev, receive_cb, &fs, 0, 2*24*512);
@@ -108,18 +141,32 @@ int main(int argc, char* argv[]) {
 
   try {
 
-    cxxopts::Options options("wrrx_rtl", "Beacon receiver for WRAN project.");
-    options.add_options()
-        ("h,help", "Print usage information.")
+    double freq          = 53e6;
+    bool agc             = false;
+    bool gain_is_manual  = true;
+    int  gain            = 0;
+
+    options_description opts("Options");
+    opts.add_options()
+        ("help,h", "Print usage information.")
         ("version", "Print version.")
-        ("freq", "Center frequency.", cxxopts::value<double>()->default_value("53e6"))
-        ("cpf", "Cyclic prefix len: 0...50", cxxopts::value<size_t>()->default_value(("12")))
+        ("freq", value<double>(&freq)->default_value(53e6),
+         "Center frequency.")
+        ("cpf",  value<size_t>()->default_value(12),
+         "Cyclic prefix len: 0...50")
+        ("agc",  value<bool>(&agc)->implicit_value(true)->default_value(false),
+         "Automatic gain control")
+        ("gain", value<double>(),
+         "Tuner gain in dB.")
         ;
 
-    auto vm = options.parse(argc, argv);
+    variables_map vm;
+    store(parse_command_line(argc, argv, opts), vm);
+    notify(vm);
 
     if (vm.count("help")) {
-        cout << options.help() << endl;
+        cout << "wrrx_rtl Beacon receiver for WRAN project." << endl;
+        cout << opts << endl;
         return EXIT_SUCCESS;
     }
 
@@ -132,18 +179,7 @@ int main(int argc, char* argv[]) {
     if (0 == cpf or  cpf > wrframegen::prefix_divider)
       throw runtime_error("prefix not in range");
 
-//    phy_mode = vm["phy"].as<size_t>();
-//    if (0 == phy_mode or phy_mode > 14)
-//      throw runtime_error("invalid phymode requested");
-
-    double freq       = vm["freq"].as<double>();
-
-    cout << "wrrx-rtl parameters:" << endl;
-    cout << format("Freq:       %g MHz\n") % (1e-6*freq);
-    cout << format("Prefix len: %2d\n")             % cpf;
-    cout << format("Samplerate: %g MHz\n")          % (1e-6*sample_rate);
-    //cout << format("Phymode:    %2d\n")             % phy_mode;
-    cout << endl;
+    gain_is_manual = vm.count("gain")!=0;
 
     size_t n = rtlsdr_get_device_count();
     if (n < 1) throw runtime_error("No device found");
@@ -162,24 +198,59 @@ int main(int argc, char* argv[]) {
     if (0 != rtlsdr_open(&dev, 0))
       throw runtime_error("Cannot open device.");
 
+    if (gain_is_manual) {
+        size_t ngains = rtlsdr_get_tuner_gains(dev, nullptr);
+        vector<int> valid_gains(ngains);
+        rtlsdr_get_tuner_gains(dev, valid_gains.data());
+        int min_diff_gain = numeric_limits<int>::max();
+        int int_gain = int(vm["gain"].as<double>()*10);
+        for (auto& g: valid_gains) {
+            if (abs(g - int_gain) < min_diff_gain) {
+                min_diff_gain = abs(g - int_gain);
+                gain = g;
+              }
+          }
+      }
+
+    cout << "wrrx-rtl parameters:" << endl;
+    cout << format("Freq:       %g MHz\n") % (1e-6*freq);
+    cout << format("Prefix len: %2d\n")    % cpf;
+    cout << format("Samplerate: %g MHz\n") % (1e-6*sample_rate);
+    cout << format("AGC:        %s\n")     % (agc?"on":"off");
+    if (gain_is_manual)
+      cout << format("gain:        %.1f\n") % (0.1*gain);
+    else
+      cout << format("gain:        auto\n");
+
     rtlsdr_set_center_freq(dev, static_cast<uint32_t>(freq));
     rtlsdr_set_freq_correction(dev, 45);
     rtlsdr_set_direct_sampling(dev, 0);
     rtlsdr_set_sample_rate(dev, static_cast<uint32_t>(sample_rate));
     rtlsdr_set_tuner_bandwidth(dev, 0); // automatic
-    rtlsdr_set_tuner_gain_mode(dev, 0);
-    rtlsdr_set_agc_mode(dev, 0);
-    //rtlsdr_set_tuner_gain(dev, 496);
+    rtlsdr_set_agc_mode(dev, agc?1:0);
+    if (gain_is_manual) {
+        rtlsdr_set_tuner_gain_mode(dev, 1);
+        rtlsdr_set_tuner_gain(dev, gain);
+      }
+    else {
+        rtlsdr_set_tuner_gain_mode(dev, 0);
+      }
     //rtlsdr_set_bias_tee(dev, 1);
     rtlsdr_reset_buffer(dev);
 
     jthread rx_thread(receive, dev);
 
-    cout << "Beacon rx control thread: enter EOF (Ctrl-D) or empty line to end." << endl;
-    string line;
-    while(getline(cin, line)) {
-        if (line.empty()) break;
-      }
+    cout << "Beacon rx control thread:  stop with SIGINT (Ctrl-C) or SIGTERM." << endl;
+    while (0 == signal_status) {
+        sleep_for(100ms);
+    }
+    cout << "Caught signal " << signal_status << ", exiting ..." << endl;
+
+//    string line;
+//    while(getline(cin, line)) {
+//        if (line.empty()) break;
+//      }
+
     rtlsdr_cancel_async(dev);
 
     cout << "Exiting and cleaning up." << endl;

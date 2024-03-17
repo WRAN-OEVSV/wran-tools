@@ -13,7 +13,10 @@
 #include "hamranfrm.hpp"
 #include "keyer.hpp"
 
-#include <cxxopts.hpp>
+#include <boost/program_options.hpp>
+namespace po = boost::program_options;
+using po::options_description, po::value, po::variables_map, po::store,
+  po::positional_options_description, po::command_line_parser, po::notify;
 
 #include <lime/LimeSuite.h>
 #include <lime/Logger.h>
@@ -207,25 +210,43 @@ int main(int argc, char* argv[])
 
   try {
 
-    cxxopts::Options options("wrbeacon", "Beacon generator for WRAN project.");
-    options.add_options()
-        ("h,help", "Print usage information.")
+    options_description opts("Options");
+    opts.add_options()
+        ("help,h", "Print usage information.")
         ("version", "Print version.")
-        ("freq", "Center frequency.", cxxopts::value<double>()->default_value("53e6"))
-        ("txpwr", "Tx Pwr. in in dBm (-26dBm ... 10dBm)", cxxopts::value<int>()->default_value("0"))
-        ("tone", "Modulation freqeuncy.", cxxopts::value<double>()->default_value("100e3"))
-        ("cpf", "Cyclic prefix len", cxxopts::value<size_t>()->default_value(("1")))
-        ("phy", "Physical layer mode: 1 ... 14", cxxopts::value<size_t>()->default_value("2"))
-        ("message", "Beacon message", cxxopts::value<string>()->default_value("OE1XTU"))
+        ("freq", value<double>()->default_value(53e6), "Center frequency.")
+        ("txpwr", value<int>()->default_value(0), "Tx Pwr. in in dBm (-26dBm ... 10dBm)")
+        ("tone", value<double>()->default_value(100e3), "Modulation freqeuncy.")
+        ("cpf", value<size_t>()->default_value(1), "Cyclic prefix len")
+        ("phy", value<size_t>()->default_value(2), "Physical layer mode: 1 ... 14")
         ;
-    options.parse_positional({"message"});
-    options.positional_help("message");
-    options.show_positional_help();
 
-    auto vm = options.parse(argc, argv);
+    options_description pos_opts;
+    pos_opts.add_options()
+        ("message", value<string>()->default_value("OE1XTU"), "Beacon message")
+        ;
+    positional_options_description pos;
+    pos.add("message", 1);
+
+    options_description all_opts;
+    all_opts.add(opts).add(pos_opts);
+
+    variables_map vm;
+    store(command_line_parser(argc, argv).options(all_opts).positional(pos).run(), vm);
+    notify(vm);
+
+
+//    options.parse_positional({"message"});
+//    options.positional_help("message");
+//    options.show_positional_help();
+
+//    auto vm = options.parse(argc, argv);
 
     if (vm.count("help")) {
-        cout << options.help() << endl;
+        cout << "hrbeacon beacon generator for WRAN project." << endl;
+        cout << "Usage: hrbeacon [options] [message]" << endl;
+        cout << "  message default is " << vm["message"].as<string>() << endl;
+        cout << opts << endl;
         return EXIT_SUCCESS;
     }
 

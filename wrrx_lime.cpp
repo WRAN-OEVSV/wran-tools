@@ -10,7 +10,11 @@
 #include "config.hpp"
 #include "wranfrm.hpp"
 
-#include <cxxopts.hpp>
+#include <boost/program_options.hpp>
+namespace po = boost::program_options;
+using po::options_description, po::value, po::variables_map, po::store,
+  po::positional_options_description, po::command_line_parser, po::notify,
+  po::parse_command_line;
 
 #include <lime/LimeSuite.h>
 #include <lime/Logger.h>
@@ -150,19 +154,22 @@ int main(int argc, char* argv[]) {
 
   try {
 
-    cxxopts::Options options("wrrx_lime", "Beacon receiver for WRAN project.");
-    options.add_options()
-        ("h,help", "Print usage information.")
+    options_description opts("Options");
+    opts.add_options()
+        ("help,h", "Print usage information.")
         ("version", "Print version.")
-        ("freq", "Center frequency.", cxxopts::value<double>()->default_value("53e6"))
-        ("cpf", "Cyclic prefix len: 0...50", cxxopts::value<size_t>()->default_value(("12")))
-        ("gain", "Gain factor 0 ... 1.0", cxxopts::value<double>()->default_value("0.7"))
+        ("freq", value<double>()->default_value(53e6), "Center frequency.")
+        ("cpf",  value<size_t>()->default_value(12),   "Cyclic prefix len: 0...50")
+        ("gain", value<double>()->default_value(0.7),  "Gain factor 0 ... 1.0")
         ;
 
-    auto vm = options.parse(argc, argv);
+    variables_map vm;
+    store(parse_command_line(argc, argv, opts), vm);
+    notify(vm);
 
     if (vm.count("help")) {
-        cout << options.help() << endl;
+        cout << "wrrx_lime Beacon receiver for WRAN project." << endl;
+        cout << opts << endl;
         return EXIT_SUCCESS;
     }
 

@@ -19,7 +19,11 @@ using namespace std::literals::complex_literals;
 
 #include <hackrf.h>
 
-#include <cxxopts.hpp>
+#include <boost/program_options.hpp>
+namespace po = boost::program_options;
+using po::options_description, po::value, po::variables_map, po::store,
+  po::positional_options_description, po::command_line_parser, po::notify,
+  po::parse_command_line;
 
 #include <iostream>
 using std::cin, std::cout, std::cerr, std::endl;
@@ -65,20 +69,23 @@ int main(int argc, char* argv[]) {
 
   try {
 
-    cxxopts::Options options("wrrx_hackrf", "Beacon receiver for WRAN project.");
-    options.add_options()
-        ("h,help", "Print usage information.")
+    options_description opts("Options");
+    opts.add_options()
+        ("help,h", "Print usage information.")
         ("version", "Print version.")
-        ("vgagain", "Baseband gain 0 ... 62dB in 2dB steps", cxxopts::value<int>()->default_value("30"))
-        ("lnagain", "IF gain 0 ... 47dB in 1dB steps", cxxopts::value<int>()->default_value("14"))
-        ("ampgain", "IF gain 0 or 11dB", cxxopts::value<int>()->default_value("11"))
-        ("cpf", "Cyclic prefix len: 0...50", cxxopts::value<size_t>()->default_value(("12")))
+        ("vgagain", value<int>()->default_value(30),     "Baseband gain 0 ... 62dB in 2dB steps")
+        ("lnagain", value<int>()->default_value(14),     "IF gain 0 ... 47dB in 1dB steps")
+        ("ampgain", value<int>()->default_value(11),     "IF gain 0 or 11dB")
+        ("cpf",     value<size_t>()->default_value((12), "Cyclic prefix len: 0...50"))
         ;
 
-    auto vm = options.parse(argc, argv);
+    variables_map vm;
+    store(parse_command_line(argc, argv, opts), vm);
+    notify(vm);
 
     if (vm.count("help")) {
-        cout << options.help() << endl;
+        cout << "wrrx_hackrf Beacon receiver for WRAN project." << endl;
+        cout << opts << endl;
         cout << "Version: " << PROJECT_VER << endl;
         cout << "using" << endl;
         cout << "hackrf_library_version: " << hackrf_library_version() << endl;

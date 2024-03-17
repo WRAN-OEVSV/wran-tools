@@ -12,7 +12,12 @@
 
 #include "config.hpp"
 
-#include <cxxopts.hpp>
+//#include <cxxopts.hpp>
+#include <boost/program_options.hpp>
+namespace po = boost::program_options;
+using po::options_description, po::value, po::variables_map, po::store,
+  po::positional_options_description, po::command_line_parser, po::notify,
+  po::parse_command_line;
 
 #include <lime/LimeSuite.h>
 #include <lime/Logger.h>
@@ -71,20 +76,26 @@ int main(int argc, char* argv[]) {
 
   try {
 
-    cxxopts::Options options("wrgpio", "GPIO manipulation tool.");
-    options.add_options()
-        ("h,help", "Print usage information.")
+    options_description opts("Options");
+    opts.add_options()
+        ("help,h", "Print usage information.")
         ("version", "Print version.")
-        ("gpio", "[x](r|t|t6|t2|t70) with x opt. for upper nibble , ", cxxopts::value<string>())
+        ("gpio", value<string>(), "[x](r|t|t6|t2|t70) with x opt. for upper nibble")
         ;
-    options.parse_positional("gpio");
-    options.positional_help("gpio");
-    options.show_positional_help();
 
-    auto vm = options.parse(argc, argv);
+    variables_map vm;
+    store(parse_command_line(argc, argv, opts), vm);
+    notify(vm);
+
+//    options.parse_positional("gpio");
+//    options.positional_help("gpio");
+//    options.show_positional_help();
+
+//    auto vm = options.parse(argc, argv);
 
     if (vm.count("help")) {
-        cout << options.help() << endl;
+        cout << "wrgpio GPIO manipulation tool." << endl;
+        cout << opts << endl;
         return EXIT_SUCCESS;
     }
 

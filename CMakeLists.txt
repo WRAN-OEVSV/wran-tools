@@ -16,9 +16,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Make sure our local CMake Modules path comes first.
 list(INSERT CMAKE_MODULE_PATH 0 ${PROJECT_SOURCE_DIR}/cmake/Modules)
 
-find_package(PkgConfig REQUIRED)
-find_package(CxxOpts   REQUIRED)
-find_package(Boost     REQUIRED COMPONENTS system)
+find_package(Boost     REQUIRED COMPONENTS system program_options)
 find_package(LiquidDSP REQUIRED)
 
 configure_file(config.hpp.in config.hpp @ONLY)
@@ -36,6 +34,7 @@ target_sources(wrbeacon-sim PRIVATE
 target_link_libraries(wrbeacon-sim
   PRIVATE
   LiquidDSP
+  Boost::program_options
 )
 
 add_executable(wrrx-sim)
@@ -45,12 +44,14 @@ target_sources(wrrx-sim PRIVATE
   wranfrm.hpp
   wrrx_sim.cpp
   config.hpp.in
+  AudioFile.h
 )
 
 target_link_libraries(wrrx-sim
   PRIVATE
   LiquidDSP
   Boost::system
+  Boost::program_options
 )
 
 add_executable(hrsim)
@@ -66,6 +67,7 @@ target_link_libraries(hrsim
     PRIVATE
     LiquidDSP
     Boost::system
+    Boost::program_options
 )
 
 install(TARGETS
@@ -87,6 +89,7 @@ if (LimeSuite_FOUND)
   target_link_libraries(wrsiggen
     PRIVATE
     Boost::system
+    Boost::program_options
     LimeSuite
   )
 
@@ -100,6 +103,7 @@ if (LimeSuite_FOUND)
   target_link_libraries(wrgpio
     PRIVATE
     LimeSuite
+    Boost::program_options
   )
 
   add_executable(cwbeacon)
@@ -136,6 +140,8 @@ if (LimeSuite_FOUND)
     PRIVATE
     LimeSuite
     LiquidDSP
+    Boost::system
+    Boost::program_options
   )
 
   add_executable(hrbeacon)
@@ -151,6 +157,7 @@ if (LimeSuite_FOUND)
     PRIVATE
     LimeSuite
     LiquidDSP
+    Boost::program_options
   )
 
   add_executable(wrrx-lime)
@@ -166,6 +173,7 @@ if (LimeSuite_FOUND)
     PRIVATE
     LiquidDSP
     Boost::system
+    Boost::program_options
     LimeSuite
   )
 
@@ -180,10 +188,12 @@ if (LimeSuite_FOUND)
 
 endif(LimeSuite_FOUND)
 
-
-find_package(rtlsdr)
-if (rtlsdr_FOUND)
-
+find_package(PkgConfig)
+if (PkgConfig_FOUND)
+#find_package(rtlsdr)
+pkg_check_modules(rtlsdr IMPORTED_TARGET librtlsdr)
+#if (rtlsdr_FOUND)
+if (pkgcfg_lib_rtlsdr_rtlsdr)
   add_executable(wrrx-rtl)
 
   target_sources(wrrx-rtl PRIVATE
@@ -197,13 +207,18 @@ if (rtlsdr_FOUND)
     PRIVATE
     LiquidDSP
     Boost::system
-    rtlsdr::rtlsdr
+    Boost::program_options
+#    rtlsdr::rtlsdr
+    PkgConfig::rtlsdr
   )
 
   install(TARGETS wrrx-rtl)
 
-endif(rtlsdr_FOUND)
+endif (pkgcfg_lib_rtlsdr_rtlsdr)
+#endif(rtlsdr_FOUND)
+endif(PkgConfig_FOUND)
 
+if (PkgConfig_FOUND)
 pkg_check_modules(HackRF IMPORTED_TARGET libhackrf)
 if (pkgcfg_lib_HackRF_hackrf)
 
@@ -222,11 +237,12 @@ if (pkgcfg_lib_HackRF_hackrf)
     PRIVATE
     LiquidDSP
     Boost::system
+    Boost::program_options
     PkgConfig::HackRF
   )
 
 install(TARGETS wrrx-hackrf)
 
 endif(pkgcfg_lib_HackRF_hackrf)
-
+endif(PkgConfig_FOUND)
 include(CPack)
