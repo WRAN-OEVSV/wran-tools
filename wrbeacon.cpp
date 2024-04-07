@@ -140,7 +140,7 @@ void transmit(stop_token stoken, lms_stream_t& tx_stream, uint64_t start_time) {
   uint32_t samp_per_frame = sample_rate*wrframegen::frame_len;
 
   // set up the CW keyer
-  keyer k(60, tone, 0, 1.0, sample_rate);
+  keyer k(80, tone, 0, 1.0, sample_rate);
 
   // Set up the beacon oscillator.
   // The oscillator is implemented by rotation of a complex<double>
@@ -181,9 +181,9 @@ void transmit(stop_token stoken, lms_stream_t& tx_stream, uint64_t start_time) {
               tx_buffer[n] = (y*=w);
           LMS_SendStream(&tx_stream, tx_buffer.data(), tx_buffer.size(), nullptr, 1000);
         }
-      // Send OFDM frames for duration seconds.
+      // Send OFDM frames for 4*duration seconds.
       tx_timestamp = rx_timestamp;
-      for (size_t n=0; n<size_t(duration/fg.frame_len); ++n) {
+      for (size_t n=0; n<size_t(4*duration/fg.frame_len); ++n) {
           if (stoken.stop_requested())
             break;
           tx_timestamp += samp_per_frame;
@@ -359,6 +359,7 @@ int main(int argc, char* argv[])
 #if 0
     // Set up TX indicator on GPIO0.
     // https://github.com/myriadrf/LimeSDR-Mini-v2_GW/issues/3
+    // https://discourse.myriadrf.org/t/limemini-2-2-gpio/8012/5
     uint16_t fpga_val = 0;
     LMS_ReadFPGAReg(dev, 0x00c0, &fpga_val);
     fpga_val &= 0xfffe;

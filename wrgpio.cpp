@@ -8,6 +8,7 @@
  * the code please note to take care that the both lower end bits always
  * sahll are at the same level to ensure a consistent state of the PA and TX/RX
  * switch.
+ * https://limesdr-mini.myriadrf.org/
  */
 
 #include "config.hpp"
@@ -32,11 +33,7 @@ using boost::format;
 using std::isxdigit;
 
 #include <iostream>
-using std::cout;
-using std::cerr;
-using std::clog;
-using std::cin;
-using std::endl;
+using std::cout, std::cerr, std::clog, std::cin, std::endl;
 
 #include <string>
 using std::string;
@@ -123,6 +120,15 @@ int main(int argc, char* argv[]) {
 
     LMS_Init(dev);
 
+#if 0
+    // Set board gpio override to lime 1 mode
+    // see LimeSDR-Mini_Gateware_Description pp19
+    uint16_t fpga_val = 0;
+    LMS_ReadFPGAReg(dev, 0x00c0, &fpga_val);
+    fpga_val |= 0x00ff;
+    LMS_WriteFPGAReg(dev, 0x00c0, fpga_val);
+#endif
+
     // Set all GPIO pins to output
     const uint8_t gpio_dir = 0xFF;
     LMS_GPIODirWrite(dev, &gpio_dir, 1);
@@ -164,7 +170,7 @@ int main(int argc, char* argv[]) {
     if (interactive) {
         cout << "Exit and reset GPIO to 0x00." << endl;
 
-        gpio_val = 0;
+        gpio_val = 0x00;
         LMS_GPIOWrite(dev, &gpio_val, 1);
       }
 
