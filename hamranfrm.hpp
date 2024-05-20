@@ -10,6 +10,7 @@
 #include <liquid/liquid.h>
 #include <cstddef>
 #include <vector>
+#include <cstdint>
 
 class hrframe {
 
@@ -18,21 +19,20 @@ protected:
 
 public:
   static const double      frame_len;       // in s
-  static const double      sample_rate;     // in Hz
   static const double      bandwidth;       // in Hz
   static const double      carrier_spacing; // in Hz
   static const std::size_t prefix_divider;
   static const std::size_t pilot_fraction;
-  static const std::size_t dc_blocker;
 
+  const double      sample_rate;     // in Hz
   const std::size_t subcarriers;
   const std::size_t available_carriers; // pilot + data
-  const std::size_t guards;             // guards per side
-  const std::size_t used_carriers;      // data
+  const std::size_t guards;
+  const std::size_t used_carriers; // data
   const std::size_t prefix_len;
   const std::size_t taper_len;
 
-  hrframe(std::size_t prefix_fraction);
+  hrframe(double sample_rate, std::size_t prefix_fraction);
   ~hrframe();
 
 };
@@ -49,13 +49,16 @@ class hrframegen : public hrframe {
   static const phy_t phy_prop[];
 
 public:
-  hrframegen(std::size_t prefix_fraction, std::size_t phy_mode);
-  ~hrframegen();
+  hrframegen(double sample_rate,
+             std::size_t prefix_fraction, std::size_t phy_mode);
+  virtual ~hrframegen();
+
   void assemble(const unsigned char* header,
                 const unsigned char* payload, std::size_t payload_len);
   bool write(std::complex<float>* buffer, std::size_t buffer_len);
+  void print();
 
-  //float sample_max;
+  float sample_max;
 };
 
 typedef int (fn_framesync_callback) (unsigned char*,
@@ -74,11 +77,14 @@ protected:
                        bool payload_valid, framesyncstats_s stats);
 
 public:
-  hrframesync(std::size_t prefix_fraction);
-  ~hrframesync();
+  std::uintmax_t num_samples;
+
+  hrframesync(double sample_rate, std::size_t prefix_fraction);
+  virtual ~hrframesync();
   bool execute(std::complex<float>*   buffer, std::size_t buffer_len);
   bool execute(std::complex<uint8_t>* buffer, std::size_t buffer_len);
   bool execute(std::complex<int8_t>*  buffer, std::size_t buffer_len);
+  framedatastats_s get_framedatastats();
 };
 
 #endif // _HAMRANFRM_HPP

@@ -8,7 +8,7 @@
  */
 
 #include "config.hpp"
-#include "wranfrm.hpp"
+#include "hamranfrm.hpp"
 
 #include <complex> // NB: Must be included before liquid.h !
 #include <liquid/liquid.h>
@@ -56,7 +56,7 @@ int receive_cb(hackrf_transfer* transfer) {
 
   //grcudp& udp(*static_cast<grcudp*>(transfer->rx_ctx));
   //udp.send(cbuf, len);
-  wrframesync& fs (*static_cast<wrframesync*>(transfer->rx_ctx));
+  hrframesync& fs (*static_cast<hrframesync*>(transfer->rx_ctx));
   fs.execute(cbuf, len);
   return 0;
 }
@@ -99,7 +99,7 @@ int main(int argc, char* argv[]) {
     }
 
     size_t cpf = vm["cpf"].as<size_t>();
-    if (0 == cpf or  cpf > wrframegen::prefix_divider)
+    if (0 == cpf or  cpf > hrframegen::prefix_divider)
       throw runtime_error("prefix not in range");
 
     int vga_gain = vm["vgagain"].as<int>();
@@ -133,7 +133,7 @@ int main(int argc, char* argv[]) {
     //grcudp udp;
     //hackrf_start_rx(dev, receive_cb, &udp);
 
-    wrframesync fs(4'000'000, cpf);
+    hrframesync fs(4'000'000, cpf);
     hackrf_start_rx(dev, receive_cb, &fs);
 
     cout << "Beacon rx control thread: enter EOF (Ctrl-D) or empty line to end." << endl;

@@ -9,7 +9,7 @@
  */
 
 #include "config.hpp"
-#include "wranfrm.hpp"
+#include "hamranfrm.hpp"
 
 #include <boost/program_options.hpp>
 namespace po = boost::program_options;
@@ -109,7 +109,7 @@ int main(int argc, char* argv[])
     //for (size_t n=0; n<100; ++n) global_message += "c"; // Test different msg len.
 
     cpf = vm["cpf"].as<size_t>();
-    if (0 == cpf or  cpf > wrframegen::prefix_divider)
+    if (0 == cpf or  cpf > hrframegen::prefix_divider)
       throw runtime_error("prefix not in range");
 
     phy_mode = vm["phy"].as<size_t>();
@@ -126,8 +126,8 @@ int main(int argc, char* argv[])
 
     unsigned char header[8] = {0,0,0,0,0,0,0,0};
 
-    wrframegen fg(sample_rate, cpf, phy_mode);
-    size_t samp_per_frame = sample_rate*wrframegen::frame_len;
+    hrframegen fg(sample_rate, cpf, phy_mode);
+    size_t samp_per_frame = sample_rate*hrframegen::frame_len;
 
     vector<complex<float>> tx_buffer(fg.subcarriers + fg.prefix_len);
     size_t tx_timestamp = 0;

@@ -4,93 +4,78 @@ SPDX-FileCopyrightText: 2023 Roland Schwarz <roland.schwarz@blackspace.at>
 SPDX-License-Identifier: CC-BY-3.0
 -->
 
-wran-tools
-==========
+hamran-tools
+============
 
-The wran-tools are intended to support hardware development and trouble
-shooting of the OEVSV-WRAN modem.
+The hamran-tools are intended to support hardware development and trouble
+shooting of the OEVSV-HAMRAN (formerly WRAN) modem.
 
 What can I do with these tools?
 -------------------------------
 
-At the moment programs
+Purpose of programs:
 
-* **wrgpio** for controlling of the GPIO pins located at LimeSDR Mini and
-* **wrsiggen** a program to generate a sinus signal
-* **wrbeacon** a program that eventually shall generate a beacon.
+* **gpio-lime**    control the GPIO pins located at LimeSDR Mini
+* **siggen-lime**  generate a sinus signal
+* **cwbeacon**     generate a CW beacon (lime)
+* **hrbeacon**     generate a mixed CW / OFDM beacon
+* **hrbeacon-sim** generate a file of OFDM signal
+* **hrbeacon-txrx-sim** simulate beacon tx / rx under various SNR
+* **hrrx-* **      various beacon receivers for rtl, hackrf and lime
 
-are available. The programs are intended for use with the LimeSDR Mini v2.2, 
+The programs are intended for use with the LimeSDR Mini v2.2, 
 but might work with the Lime Mini 1.
 
 Installation
 ------------
 
-The *wran-tools* can be built with the help of cmake and a C++ compiler. If
-you are using debian or ubuntu, the prerequisites can be installed with
+The *hamran-tools* can be built with the help of cmake and a C++ compiler. If
+you are using debian or ubuntu, the prerequisites can be installed with the
+apt-get tool. I have also managed to cross build for the odroid platform and
+windows. The process, however may be more contrieved. Also the list of 
+prerequisites may be changing particularly during the early development phase
+and version zero releases. If you are in doubt, check the CMakeLists.txt file.
 
-    apt-get install liblimesuite-dev \
-                    libcxxopts-dev libboost-dev libboost-system-dev
+I am a believer of the orthogonality principle, meaning this code is using 
+libraries, the libraries are not part of it. So you will need to create a
+build environment by yourself. There are no magic downloaders of used libraries.
 
-Of course every other method installing the prerequisites is fine too, just
-take care, that the cmake config files get installed too.
+The upside is, that package manager will like the approach since the code only
+depends to a very small amount on platform peculiarities and avoids duplication,
+the downside, howver is that it is harder for you to compile the programs if you
+are not used to compile programs. Since this is open source, you should be able
+to find someone who compiles the programs for you. (Possibly you could buy him a
+bear or something she likes in return.) 
 
-Clone the repository to a covneient directory, choose a name for a build
-directory, crate it and *cd* into it.
+Please understand that I have not the time to explain how to use the CMake tool,
+instead head over to their geŕeat documentation site: 
+https://cmake.org/documentation/
 
-    cmake <path/to/git/source/dir>
-    cmake --build .
-
-If you want you may install the binaries to the prefix path. For details
-please consult the cmake user guide. If you need the tools q&d, just try to
-run them from the build directory.
+Since the tools are meant to be hacked on, you are better off learning to
+compile them yourself. There will be a separate procedure for the final 
+*product* of this project.
 
 Usage
 -----
 
-    wrgpio
+The tools have a built in help page thet can be invoked by giving the *--help* 
+switch on the command line, which
 
-The *wrgpio* tool runs a little loop, taking one line input from the keyboard
-and writing its values to the GPIO pins of the LimeMini. The commands are
-made of one optional hex character plus one of *r, t, t6, t2, t70*. The leading
-hex character, if present, turns on one of the LED's on the front panel, while
-the second part switches the power amplifier, the TX/RX switch and the
-bandfilters. The leading hex character allows independent control of all the
-bits, while the second part takes care of the fact that the TX/RX and PA shall
-be allways both on or both off.
-
-Example:
-
-    bt70<enter>
-
-will turn on LED 1,3,4, switch on PA and TX, and select the 70cm bandfilter.
-You may end the program by hitting return on an empty line. The tool will set
-all bits to zero before quitting.
-
-    wrsiggen
-
-The *wrsiggen* tool is intended to test the signal path of the modem plus 
-amplifier. Using this tool the modem will produce RF output at a choosen level.
-Please take care that you have connected a sufficient dummy load and consider
-that sending a CW tone for an extended period of time may cause a lot of
-heating of the PA. If left unattended the program will stop after 10 minutes.
-It is recommended, however, to end the program by sending an interrupt signal,
-i.e. Ctrl-C, as soon as you have finished your particular measurement.
-
-    wrsiggen --help
+    <tool> --help
 
 will show a help screen with the various parameters and their default values.
 You either may specify all of the parameters in a positional manner without
 the need to write the parameter names, or only specify specific parameters
 while leaving others at their default value.
 
-Please note that the gain adjustment reacts "bitingly". So be careful and
-increase the value only slowly considering the current consumption of the modem.
+For further details dont be shy and study the source, exercising one of your
+four rights of free software: **use**,**study**,**share**,**improve**.
 
 Contributing
 ------------
 
-The WRAN modem is a complex project, which is carried out by a small group of
-enthusiastic Austrian radio amateurs. We are very happy if you want to to
+The HAMRAN modem is a complex project, which is carried out by a small group of
+enthusiastic Austrian radio amateurs. We are very happy if you want to
 support our work by contributing to the code base. Just send and email to one
 of the authors or just me at oe1rsa@oevsv.at
 

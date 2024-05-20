@@ -8,7 +8,7 @@
  */
 
 #include "config.hpp"
-#include "wranfrm.hpp"
+#include "hamranfrm.hpp"
 
 #include <rtl-sdr.h>
 
@@ -90,13 +90,13 @@ complex<float> buf_4MHz[40*512];   // 24*512*5/3
 complex<float> buf_2_4MHz[24*512]; // 24*512
 rresamp_cccf rs;
 
-class rxframe : public wrframesync {
+class rxframe : public hrframesync {
 
   size_t num_valid_frames;
 
 public:
   rxframe(double sample_rate, size_t prefix_fraction)
-    : wrframesync(sample_rate, prefix_fraction),
+    : hrframesync(sample_rate, prefix_fraction),
       num_valid_frames(0) {
   }
 
@@ -118,7 +118,7 @@ protected:
 };
 
 void receive_cb(unsigned char*buf, uint32_t len, void* ctx) {
-  wrframesync& fs (*static_cast<wrframesync*>(ctx));
+  hrframesync& fs (*static_cast<hrframesync*>(ctx));
   complex<uint8_t>* buf_8 = reinterpret_cast<complex<uint8_t>*>(buf);
   for (size_t n=0; n<24*512; ++n) buf_2_4MHz[n] = (buf_8[n].real()/127.5-1) + 1i*(buf_8[n].imag()/127.5-1);
   rresamp_cccf_execute(rs, buf_2_4MHz, buf_4MHz);
@@ -176,7 +176,7 @@ int main(int argc, char* argv[]) {
     }
 
     cpf = vm["cpf"].as<size_t>();
-    if (0 == cpf or  cpf > wrframegen::prefix_divider)
+    if (0 == cpf or  cpf > hrframegen::prefix_divider)
       throw runtime_error("prefix not in range");
 
     gain_is_manual = vm.count("gain")!=0;

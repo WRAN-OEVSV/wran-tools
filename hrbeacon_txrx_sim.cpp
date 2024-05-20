@@ -8,7 +8,7 @@
  */
 
 #include "config.hpp"
-#include "wranfrm.hpp"
+#include "hamranfrm.hpp"
 
 #include <boost/program_options.hpp>
 namespace po = boost::program_options;
@@ -69,7 +69,7 @@ const double sample_rate = 4e6;
 size_t   cpf               = 0; // cyclic prefix len, 0 ... prefix_divider
 size_t   phy_mode          = 1; // physical layer mode;
 
-class wrframegen_stats : public wrframegen {
+class wrframegen_stats : public hrframegen {
   uint32_t        seed;
   mt19937         msggen;
   uniform_int_distribution<unsigned short> symbol;
@@ -80,7 +80,7 @@ public:
   wrframegen_stats(double sample_rate,
                    size_t prefix_fraction, size_t phy_mode,
                    size_t packet_size = 256, uint32_t seed = 230361)
-    : wrframegen(sample_rate, prefix_fraction, phy_mode),
+    : hrframegen(sample_rate, prefix_fraction, phy_mode),
       seed(seed), msggen(seed), symbol(0, 255), offset(0), msg(packet_size) {
   }
 
@@ -91,12 +91,12 @@ public:
       }
     uint64_t header = offset;
     for (size_t n=0; n<msg.size(); ++n, ++offset) msg[n] = symbol(msggen);
-    wrframegen::assemble(reinterpret_cast<const unsigned char*>(&header),
+    hrframegen::assemble(reinterpret_cast<const unsigned char*>(&header),
                          msg.data(), msg.size());
   }
 };
 
-class wrframesync_stats : public wrframesync {
+class wrframesync_stats : public hrframesync {
   uint32_t        seed;
   mt19937         msggen;
   uniform_int_distribution<unsigned short> symbol;
@@ -109,7 +109,7 @@ public:
   uintmax_t       num_payloadbits_valid;
 
   wrframesync_stats(double sample_rate, std::size_t prefix_fraction, uint32_t seed = 230361)
-    : wrframesync(sample_rate, prefix_fraction) ,
+    : hrframesync(sample_rate, prefix_fraction) ,
       seed(seed), msggen(seed), symbol(0, 255), offset(0), num_bytes_valid(0),
       num_bits_valid(0), num_payloadbits_valid(0) {}
 
@@ -173,7 +173,7 @@ int main(int argc, char* argv[])
     }
 
     cpf = vm["cpf"].as<size_t>();
-    if (0 == cpf or  cpf > wrframegen::prefix_divider)
+    if (0 == cpf or  cpf > hrframegen::prefix_divider)
       throw runtime_error("prefix not in range");
 
     phy_mode = vm["phy"].as<size_t>();

@@ -6,7 +6,7 @@ cmake_minimum_required(VERSION 3.5)
 cmake_policy(VERSION 3.5...3.27)
 
 project(wran-tools
-  VERSION 0.2.1
+  VERSION 0.3.0
   LANGUAGES CXX
 )
 
@@ -22,48 +22,48 @@ find_package(LiquidDSP REQUIRED)
 configure_file(config.hpp.in config.hpp @ONLY)
 include_directories(${PROJECT_BINARY_DIR})
 
-add_executable(wrbeacon-sim)
+add_executable(hrbeacon-sim)
 
-target_sources(wrbeacon-sim PRIVATE
-  wranfrm.cpp
-  wranfrm.hpp
-  wrbeacon_sim.cpp
+target_sources(hrbeacon-sim PRIVATE
+  hamranfrm.cpp
+  hamranfrm.hpp
+  hrbeacon_sim.cpp
   config.hpp.in
 )
 
-target_link_libraries(wrbeacon-sim
+target_link_libraries(hrbeacon-sim
   PRIVATE
   LiquidDSP
   Boost::program_options
 )
 
-add_executable(wrrx-sim)
+add_executable(hrrx-sim)
 
-target_sources(wrrx-sim PRIVATE
-  wranfrm.cpp
-  wranfrm.hpp
-  wrrx_sim.cpp
+target_sources(hrrx-sim PRIVATE
+  hamranfrm.cpp
+  hamranfrm.hpp
+  hrrx_sim.cpp
   config.hpp.in
   AudioFile.h
 )
 
-target_link_libraries(wrrx-sim
+target_link_libraries(hrrx-sim
   PRIVATE
   LiquidDSP
   Boost::system
   Boost::program_options
 )
 
-add_executable(hrsim)
+add_executable(hrbeacon-txrx-sim)
 
-target_sources(hrsim PRIVATE
-    wranfrm.cpp
-    wranfrm.hpp
-    hrsim.cpp
+target_sources(hrbeacon-txrx-sim PRIVATE
+    hamranfrm.cpp
+    hamranfrm.hpp
+    hrbeacon_txrx_sim.cpp
     config.hpp.in
 )
 
-target_link_libraries(hrsim
+target_link_libraries(hrbeacon-txrx-sim
     PRIVATE
     LiquidDSP
     Boost::system
@@ -71,36 +71,36 @@ target_link_libraries(hrsim
 )
 
 install(TARGETS
-  wrbeacon-sim
-  wrrx-sim
-  hrsim
+  hrbeacon-sim
+  hrrx-sim
+  hrbeacon-txrx-sim
 )
 
 find_package(LimeSuite)
 if (LimeSuite_FOUND)
 
-  add_executable(wrsiggen)
+  add_executable(siggen-lime)
 
-  target_sources(wrsiggen PRIVATE
-    wrsiggen.cpp
+  target_sources(siggen-lime PRIVATE
+    siggen_lime.cpp
     config.hpp.in
   )
 
-  target_link_libraries(wrsiggen
+  target_link_libraries(siggen-lime
     PRIVATE
     Boost::system
     Boost::program_options
     LimeSuite
   )
 
-  add_executable(wrgpio)
+  add_executable(gpio-lime)
 
-  target_sources(wrgpio PRIVATE
-    wrgpio.cpp
+  target_sources(gpio-lime PRIVATE
+    gpio_lime.cpp
     config.hpp.in
   )
 
-  target_link_libraries(wrgpio
+  target_link_libraries(gpio-lime
     PRIVATE
     LimeSuite
     Boost::program_options
@@ -123,27 +123,6 @@ if (LimeSuite_FOUND)
     LimeSuite
   )
 
-  add_executable(wrbeacon)
-
-  target_sources(wrbeacon PRIVATE
-    wranfrm.cpp
-    wranfrm.hpp
-    wrbeacon.cpp
-    config.hpp.in
-    morsecode.cpp
-    morsecode.hpp
-    keyer.cpp
-    keyer.hpp
-  )
-
-  target_link_libraries(wrbeacon
-    PRIVATE
-    LimeSuite
-    LiquidDSP
-    Boost::system
-    Boost::program_options
-  )
-
   add_executable(hrbeacon)
 
   target_sources(hrbeacon PRIVATE
@@ -151,25 +130,46 @@ if (LimeSuite_FOUND)
     hamranfrm.hpp
     hrbeacon.cpp
     config.hpp.in
+    morsecode.cpp
+    morsecode.hpp
+    keyer.cpp
+    keyer.hpp
   )
 
   target_link_libraries(hrbeacon
     PRIVATE
     LimeSuite
     LiquidDSP
+    Boost::system
     Boost::program_options
   )
 
-  add_executable(wrrx-lime)
+#  add_executable(hrbeacon)
 
-  target_sources(wrrx-lime PRIVATE
-    wranfrm.cpp
-    wranfrm.hpp
-    wrrx_lime.cpp
+#  target_sources(hrbeacon PRIVATE
+#    hamranfrm.cpp
+#    hamranfrm.hpp
+#    hrbeacon.cpp
+#    config.hpp.in
+#  )
+
+#  target_link_libraries(hrbeacon
+#    PRIVATE
+#    LimeSuite
+#    LiquidDSP
+#    Boost::program_options
+#  )
+
+  add_executable(hrrx-lime)
+
+  target_sources(hrrx-lime PRIVATE
+    hamranfrm.cpp
+    hamranfrm.hpp
+    hrrx_lime.cpp
     config.hpp.in
   )
 
-  target_link_libraries(wrrx-lime
+  target_link_libraries(hrrx-lime
     PRIVATE
     LiquidDSP
     Boost::system
@@ -178,11 +178,10 @@ if (LimeSuite_FOUND)
   )
 
   install(TARGETS
-    wrsiggen
-    wrgpio
-    wrbeacon
-    wrrx-lime
+    siggen-lime
+    gpio-lime
     hrbeacon
+    hrrx-lime
     cwbeacon
   )
 
@@ -194,16 +193,16 @@ if (PkgConfig_FOUND)
 pkg_check_modules(rtlsdr IMPORTED_TARGET librtlsdr)
 #if (rtlsdr_FOUND)
 if (pkgcfg_lib_rtlsdr_rtlsdr)
-  add_executable(wrrx-rtl)
+  add_executable(hrrx-rtl)
 
-  target_sources(wrrx-rtl PRIVATE
-    wranfrm.cpp
-    wranfrm.hpp
-    wrrx_rtl.cpp
+  target_sources(hrrx-rtl PRIVATE
+    hamranfrm.cpp
+    hamranfrm.hpp
+    hrrx_rtl.cpp
     config.hpp.in
   )
 
-  target_link_libraries(wrrx-rtl
+  target_link_libraries(hrrx-rtl
     PRIVATE
     LiquidDSP
     Boost::system
@@ -212,7 +211,7 @@ if (pkgcfg_lib_rtlsdr_rtlsdr)
     PkgConfig::rtlsdr
   )
 
-  install(TARGETS wrrx-rtl)
+  install(TARGETS hrrx-rtl)
 
 endif (pkgcfg_lib_rtlsdr_rtlsdr)
 #endif(rtlsdr_FOUND)
@@ -222,18 +221,18 @@ if (PkgConfig_FOUND)
 pkg_check_modules(HackRF IMPORTED_TARGET libhackrf)
 if (pkgcfg_lib_HackRF_hackrf)
 
-  add_executable(wrrx-hackrf)
+  add_executable(hrrx-hackrf)
 
-  target_sources(wrrx-hackrf PRIVATE
-    wranfrm.cpp
-    wranfrm.hpp
-    wrrx_hackrf.cpp
+  target_sources(hrrx-hackrf PRIVATE
+    hamranfrm.cpp
+    hamranfrm.hpp
+    hrrx_hackrf.cpp
     config.hpp.in
     grcudp.hpp
     grcudp.cpp
   )
 
-  target_link_libraries(wrrx-hackrf
+  target_link_libraries(hrrx-hackrf
     PRIVATE
     LiquidDSP
     Boost::system
@@ -241,7 +240,7 @@ if (pkgcfg_lib_HackRF_hackrf)
     PkgConfig::HackRF
   )
 
-install(TARGETS wrrx-hackrf)
+install(TARGETS hrrx-hackrf)
 
 endif(pkgcfg_lib_HackRF_hackrf)
 endif(PkgConfig_FOUND)

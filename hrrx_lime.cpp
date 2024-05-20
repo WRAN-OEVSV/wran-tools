@@ -8,7 +8,7 @@
  */
 
 #include "config.hpp"
-#include "wranfrm.hpp"
+#include "hamranfrm.hpp"
 
 #include <boost/program_options.hpp>
 namespace po = boost::program_options;
@@ -121,7 +121,7 @@ atomic<size_t>   cpf               = 0; // cyclic prefix len, 0 ... prefix_divid
 //}
 
 void receive(stop_token stoken, lms_stream_t& rx_stream) {
-  wrframesync fs(sample_rate, cpf);
+  hrframesync fs(sample_rate, cpf);
 
   vector<complex<float>> rx_buffer(1024*4);
   lms_stream_meta_t meta;
@@ -179,7 +179,7 @@ int main(int argc, char* argv[]) {
     }
 
     cpf = vm["cpf"].as<size_t>();
-    if (0 == cpf or  cpf > wrframegen::prefix_divider)
+    if (0 == cpf or  cpf > hrframegen::prefix_divider)
       throw runtime_error("prefix not in range");
 
     double band_width = 2.5e6;

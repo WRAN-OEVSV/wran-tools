@@ -8,7 +8,7 @@
  */
 
 #include "config.hpp"
-#include "wranfrm.hpp"
+#include "hamranfrm.hpp"
 #include "AudioFile.h"
 
 #include <liquid/liquid.h>
@@ -59,13 +59,13 @@ const double sample_rate = 4e6;
 size_t cpf      = 0;
 size_t phy_mode = 1;
 
-class rxframe : public wrframesync {
+class rxframe : public hrframesync {
 
   size_t num_valid_frames;
 
 public:
   rxframe(double sample_rate, size_t prefix_fraction)
-    : wrframesync(sample_rate, prefix_fraction),
+    : hrframesync(sample_rate, prefix_fraction),
       num_valid_frames(0) {
   }
 
@@ -127,7 +127,7 @@ int main(int argc, char* argv[]) {
     }
 
     cpf = vm["cpf"].as<size_t>();
-    if (0 == cpf or  cpf > wrframegen::prefix_divider)
+    if (0 == cpf or  cpf > hrframegen::prefix_divider)
       throw runtime_error("prefix not in range");
 
     phy_mode = vm["phy"].as<size_t>();
