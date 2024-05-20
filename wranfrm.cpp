@@ -22,7 +22,7 @@ using std::complex, std::abs;
 using namespace std::literals::complex_literals;
 
 #include <algorithm>
-using std::min, std::max, std::minmax;
+using std::min, std::max, std::minmax, std::clamp;
 
 #include <cmath>
 using std::fmod;
@@ -44,7 +44,7 @@ const size_t wrframe::pilot_fraction  =        5;
 const wrframegen::phy_t wrframegen::phy_prop[] =
 {
   {LIQUID_MODEM_PSK2,    LIQUID_FEC_NONE,        LIQUID_FEC_NONE},    //  1
-  {LIQUID_MODEM_QPSK,    LIQUID_FEC_CONV_V27,    LIQUID_FEC_REP3},    //  2
+  {LIQUID_MODEM_PSK2,    LIQUID_FEC_CONV_V27,    LIQUID_FEC_REP3},    //  2
   {LIQUID_MODEM_QPSK,    LIQUID_FEC_CONV_V27,    LIQUID_FEC_NONE},    //  3
   {LIQUID_MODEM_QPSK,    LIQUID_FEC_CONV_V27P23, LIQUID_FEC_NONE},    //  4
   {LIQUID_MODEM_QPSK,    LIQUID_FEC_CONV_V27P23, LIQUID_FEC_NONE},    //  5
@@ -140,7 +140,9 @@ bool wrframegen::write(complex<float>* buffer, size_t buffer_len) {
   // TODO: The optimum scale factor needs to be determined.
   for (size_t i=0; i < buffer_len; ++i) {
       sample_max = max(sample_max, abs(buffer[i]));
-      buffer[i] *= 0.241; //0.3;//0.296;
+      //buffer[i] *= 0.241; //0.3;//0.296;
+      buffer[i] = complex<float>(clamp(buffer[i].real()*0.25f, -1.0f, 1.0f), clamp(buffer[i].imag()*0.25f, -1.0f, 1.0f));
+      //buffer[i] = complex<float>(clamp(buffer[i].real()*2.5f, -1.0f, 1.0f), clamp(buffer[i].imag()*2.5f, -1.0f, 1.0f));
     }
   return (1 == result)?true:false;
 }

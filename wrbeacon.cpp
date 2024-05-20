@@ -140,7 +140,7 @@ void transmit(stop_token stoken, lms_stream_t& tx_stream, uint64_t start_time) {
   uint32_t samp_per_frame = sample_rate*wrframegen::frame_len;
 
   // set up the CW keyer
-  keyer k(80, tone, 0, 1.0, sample_rate);
+  keyer k(80, tone, 0, 0.25, sample_rate);
 
   // Set up the beacon oscillator.
   // The oscillator is implemented by rotation of a complex<double>
@@ -178,7 +178,7 @@ void transmit(stop_token stoken, lms_stream_t& tx_stream, uint64_t start_time) {
           if (stoken.stop_requested())
             break;
           for (size_t n = 0; n<tx_buffer.size(); ++n)
-              tx_buffer[n] = (y*=w);
+              tx_buffer[n] = 0.25*(y*=w);
           LMS_SendStream(&tx_stream, tx_buffer.data(), tx_buffer.size(), nullptr, 1000);
         }
       // Send OFDM frames for 4*duration seconds.
@@ -258,7 +258,7 @@ int main(int argc, char* argv[])
         ("help,h", "Print usage information.")
         ("version", "Print version.")
         ("freq",     value<double>()->default_value(53e6), "Center frequency in Hz.")
-        ("txpwr",    value<int>()->default_value(0),       "Tx Pwr. in in dBm (-26dBm ... 10dBm)")
+        ("txpwr",    value<int>()->default_value(10),       "Tx Pwr. in in dBm (-26dBm ... 10dBm)")
         ("tone",     value<double>()->default_value(0),    "Modulation freqeuncy in Hz.")
         ("duration", value<double>()->default_value(10.0), "Duration of beacon signals in seconds")
         ("cpf",      value<size_t>()->default_value(12),   "Cyclic prefix len: 0...50")

@@ -109,78 +109,60 @@ namespace {
 
 }
 
-const double sample_rate = 4e6; // lime specific
+const double sample_rate     = 4e6; // Hz lime specific
+const double carrier_spacing = 4e3; // Hz
+uint32_t samp_per_frame = 40000;
 
 // some global shared variables for use by the threads
 atomic<uint64_t> rx_timestamp      = 0; // latest timestamp from rx, we know of
-atomic<size_t>   cpf               = 0; // cyclic prefix len, 0 ... prefix_divider
-atomic<size_t>   phy_mode          = 1; // physical layer mode;
-atomic<double>   tone          = 100e3; // Hz
-string message;                         // the beacon text.
-mutex message_mutex;
 
 // Note: LMS_SendStream and LMS_RecvStream are the ONLY thread safe functions
 // of limesuite.
 // The transmit thread:
 void transmit(stop_token stoken, lms_stream_t& tx_stream, uint64_t start_time) {
 
-  unsigned int count = 0;
-  //keyer k(60, tone, 0, 1.0, sample_rate);
-
-  float sample_max = numeric_limits<float>::min();
-
-  unsigned char header[8] = {0,0,0,0,0,0,0,0};
-
-  hrframegen fg(cpf, phy_mode);
-  uint32_t samp_per_frame = sample_rate*hrframegen::frame_len;
-
-  vector<complex<float>> wr_buffer(fg.subcarriers + fg.prefix_len);
-  vector<complex<float>> tx_buffer(wr_buffer.size()*sample_rate/fg.sample_rate);
-  rresamp_cccf rs = rresamp_cccf_create_default(tx_buffer.size(), wr_buffer.size());
-  rresamp_cccf_set_scale(rs, 0.245f);
-
   uint64_t tx_timestamp = start_time;
   lms_stream_meta_t meta;
 
+  int num_carriers = int(sample_rate / carrier_spacing);
+
+  vector<complex<float>> x(num_carriers);
+  vector<complex<float>> y(num_carriers);
+  fftplan q = fft_create_plan(num_carriers, x.data(), y.data(), LIQUID_FFT_BACKWARD, 0);
+
+  for (int n=num_carriers/2-num_carriers/4; n<num_carriers/2+num_carriers/4; ++n) x[n] = 2.0/num_carriers;
+  fft_shift(x.data(), num_carriers);
+  fft_execute(q);
+//  for (int n=0; n<num_carriers; ++n) {
+//    cout << format("n: %d, %f + j%f\n") % n % y[n].real() % y[n].imag();
+//  }
+
+  tx_timestamp = rx_timestamp + samp_per_frame;
   while(!stoken.stop_requested()) {
       tx_timestamp += samp_per_frame;
+      meta.timestamp = tx_timestamp;
+      meta.waitForTimestamp = true;
       while(not stoken.stop_requested()
             and rx_timestamp + samp_per_frame < tx_timestamp) {
           sleep_for(10us); // In a bidirectionional setting waiting here could
-                           // be replaced by transmit data preparation.
+          // be replaced by transmit data preparation.
         }
-
-      if (not stoken.stop_requested()) {
-          fg.assemble(header, reinterpret_cast<unsigned char*>(message.data()), message.size());
-          bool last = fg.write(wr_buffer.data(), wr_buffer.size());
-          meta.timestamp = tx_timestamp;
-          meta.waitForTimestamp = true;
-          while (not last) {
-              rresamp_cccf_execute(rs, wr_buffer.data(), tx_buffer.data());
-              for (size_t i=0; i<tx_buffer.size(); ++i) sample_max = max(sample_max, abs(tx_buffer[i]));
-              LMS_SendStream(&tx_stream, tx_buffer.data(), tx_buffer.size(), &meta, 1000);
-              // TODO: I do not yet understand the write function completely.
-              // The documentaion and source of liquid appear incomplete.
-              last = fg.write(wr_buffer.data(), wr_buffer.size());
-              meta.waitForTimestamp = false;
-              meta.flushPartialPacket = false;
-            }
-          meta.flushPartialPacket = true;
-          rresamp_cccf_execute(rs, wr_buffer.data(), tx_buffer.data());
-          for (size_t i=0; i<tx_buffer.size(); ++i) sample_max = max(sample_max, abs(tx_buffer[i]));
-          LMS_SendStream(&tx_stream, tx_buffer.data(), tx_buffer.size(), &meta, 1000);
-        }
+      for (size_t i=0; i<38; ++i)
+      LMS_SendStream(&tx_stream, y.data(), y.size(), &meta, 1000);
     }
 
-  cout << "sample_max = " << sample_max << ", 1/sample_max = " << 1/sample_max << endl;
+  fft_destroy_plan(q);
+
   cout << "Transmit thread stopping." << endl;
 }
 
 // The receive thread:
 void receive(stop_token stoken, lms_stream_t& rx_stream, lms_stream_t& tx_stream) {
+
   vector<complex<float>> rx_buffer(1024*4);
   lms_stream_meta_t meta;
   int ret = LMS_RecvStream(&rx_stream, rx_buffer.data(), rx_buffer.size(), &meta, 1000);
+
   jthread tx_thread(transmit, ref(tx_stream), meta.timestamp);
   rx_timestamp = meta.timestamp +  ret;
 
@@ -216,36 +198,19 @@ int main(int argc, char* argv[])
         ("version", "Print version.")
         ("freq", value<double>()->default_value(53e6), "Center frequency.")
         ("txpwr", value<int>()->default_value(0), "Tx Pwr. in in dBm (-26dBm ... 10dBm)")
-        ("tone", value<double>()->default_value(100e3), "Modulation freqeuncy.")
-        ("cpf", value<size_t>()->default_value(1), "Cyclic prefix len")
-        ("phy", value<size_t>()->default_value(2), "Physical layer mode: 1 ... 14")
         ;
-
-    options_description pos_opts;
-    pos_opts.add_options()
-        ("message", value<string>()->default_value("OE1XTU"), "Beacon message")
-        ;
-    positional_options_description pos;
-    pos.add("message", 1);
 
     options_description all_opts;
-    all_opts.add(opts).add(pos_opts);
+    all_opts.add(opts);
 
     variables_map vm;
-    store(command_line_parser(argc, argv).options(all_opts).positional(pos).run(), vm);
+    store(command_line_parser(argc, argv).options(all_opts).run(), vm);
     notify(vm);
 
 
-//    options.parse_positional({"message"});
-//    options.positional_help("message");
-//    options.show_positional_help();
-
-//    auto vm = options.parse(argc, argv);
-
     if (vm.count("help")) {
-        cout << "hrbeacon beacon generator for WRAN project." << endl;
+        cout << "hrbeacon beacon generator for HAMRAN project." << endl;
         cout << "Usage: hrbeacon [options] [message]" << endl;
-        cout << "  message default is " << vm["message"].as<string>() << endl;
         cout << opts << endl;
         return EXIT_SUCCESS;
     }
@@ -255,21 +220,9 @@ int main(int argc, char* argv[])
         return EXIT_SUCCESS;
     }
 
-    message = vm["message"].as<string>();  // no need for message_mutex yet.
-
-    cpf = vm["cpf"].as<size_t>();
-    if (0 == cpf or  cpf > hrframegen::prefix_divider)
-      throw runtime_error("prefix not in range");
-
-    phy_mode = vm["phy"].as<size_t>();
-    if (0 == phy_mode or phy_mode > 14)
-      throw runtime_error("invalid phymode requested");
-
     //double band_width = 2.0e6;
     double freq       = vm["freq"].as<double>();
     double txpwr      = vm["txpwr"].as<int>();
-
-    tone  = vm["tone"].as<double>();
 
     cout << "hrbeacon. Version " PROJECT_VER << endl;
 
@@ -277,10 +230,6 @@ int main(int argc, char* argv[])
     cout << format("Freq:       %g MHz\n") % (1e-6*freq);
     cout << format("Peak Pwr:   %g dBm\n") % vm["txpwr"].as<int>();
     cout << format("Samplerate: %g MHz\n") % (1e-6*sample_rate);
-    cout << format("Prefix len: %2d\n")    % cpf;
-    cout << format("Phymode:    %2d\n")    % phy_mode;
-    cout << format("Tone: %3.3f kHz\n")    % (1e-3*tone);
-    cout << format("Message: %s\n")        % message;
     cout << endl;
 
     // Try to open devices until one is available or fail if none.
@@ -301,31 +250,12 @@ int main(int argc, char* argv[])
     LMS_Init(dev);
 
     // Set up GPIO.
-    uint8_t gpio_dir = 0xFF;
+    uint8_t gpio_dir = 0x0F;
     LMS_GPIODirWrite(dev, &gpio_dir, 1);
 
     uint8_t gpio_val = 0;
     LMS_GPIODirRead(dev, &gpio_val, 1);
     lime::debug("GPIODIR: 0x%02x", unsigned(gpio_val));
-
-
-// This is the fast, data synchronous TX/TX signaling
-#if 0
-    // Set up TX indicator on GPIO0.
-    // https://github.com/myriadrf/LimeSDR-Mini-v2_GW/issues/3
-    uint16_t fpga_val = 0;
-    LMS_ReadFPGAReg(dev, 0x00c0, &fpga_val);
-    fpga_val &= 0xfffe;
-    LMS_WriteFPGAReg(dev, 0x00c0, fpga_val);
-
-    // TXANT_PRE
-    fpga_val = static_cast<uint16_t>(10.5e-6*sample_rate);
-    LMS_WriteFPGAReg(dev, 0x0010, fpga_val);
-
-    // TXANT_POST
-    fpga_val = static_cast<uint16_t>(11.5e-6*sample_rate);
-    LMS_WriteFPGAReg(dev, 0x0011, fpga_val);
-#endif
 
     LMS_SetSampleRate(dev,     sample_rate, 0);
 
