@@ -119,6 +119,8 @@ const double sample_rate = 4e6; // lime specific
 
 // some global shared variables for use by the threads
 atomic<uint64_t> rx_timestamp      = 0; // latest timestamp from rx, we know of
+atomic<double>   sinepwr           = 0; // power of sine signal in dBFS
+atomic<double>   ofdmpwr           = -12; // power of OFDM signal in dBFS
 atomic<size_t>   cpf               = 0; // cyclic prefix len, 0 ... prefix_divider
 atomic<size_t>   phy_mode          = 1; // physical layer mode;
 atomic<double>   tone              = 0; // Hz CW beacon frequency
@@ -133,14 +135,15 @@ atomic<bool>     is_interactive    = true;
 void transmit(stop_token stoken, lms_stream_t& tx_stream, uint64_t start_time) {
 
   float sample_max = numeric_limits<float>::min();
+  double sine_amplitude = exp(log(10)/20*sinepwr);
 
   // Set up the OFDM frame ressources.
   unsigned char header[8] = {0,0,0,0,0,0,0,0};
-  hrframegen fg(sample_rate, cpf, phy_mode);
+  hrframegen fg(sample_rate, ofdmpwr, cpf, phy_mode);
   uint32_t samp_per_frame = sample_rate*hrframegen::frame_len;
 
   // set up the CW keyer
-  keyer k(80, tone, 0, 0.25, sample_rate);
+  keyer k(80, tone, 0, sine_amplitude, sample_rate);
 
   // Set up the beacon oscillator.
   // The oscillator is implemented by rotation of a complex<double>
@@ -162,6 +165,7 @@ void transmit(stop_token stoken, lms_stream_t& tx_stream, uint64_t start_time) {
       if (!is_interactive) {
           auto in_time = system_clock::to_time_t(system_clock::now());
           cout << put_time(localtime(&in_time), "%Y-%m-%d %X") << " " << ++count << endl;
+          fg.sample_max = numeric_limits<float>::min();
         }
       // Load the message.
       message_mutex.lock();
@@ -178,7 +182,7 @@ void transmit(stop_token stoken, lms_stream_t& tx_stream, uint64_t start_time) {
           if (stoken.stop_requested())
             break;
           for (size_t n = 0; n<tx_buffer.size(); ++n)
-              tx_buffer[n] = 0.25*(y*=w);
+              tx_buffer[n] = sine_amplitude*(y*=w);
           LMS_SendStream(&tx_stream, tx_buffer.data(), tx_buffer.size(), nullptr, 1000);
         }
       // Send OFDM frames for 4*duration seconds.
@@ -216,7 +220,7 @@ void transmit(stop_token stoken, lms_stream_t& tx_stream, uint64_t start_time) {
         }
     }
 
-  cout << "sample_max = " << sample_max << ", 1/sample_max = " << 1/sample_max << endl;
+  cout << "sample_max = " << 20/log(10)*log(sample_max) << " dBFS" <<  endl;
   cout << "Transmit thread stopping." << endl;
 }
 
@@ -258,7 +262,9 @@ int main(int argc, char* argv[])
         ("help,h", "Print usage information.")
         ("version", "Print version.")
         ("freq",     value<double>()->default_value(53e6), "Center frequency in Hz.")
-        ("txpwr",    value<int>()->default_value(10),       "Tx Pwr. in in dBm (-26dBm ... 10dBm)")
+        ("txpwr",    value<int>()->default_value(0),       "Tx Pwr.of fullscale sine in dBm (-26dBm ... 10dBm)")
+        ("sinepwr",  value<double>()->default_value(0),    "Sine gain in dBFS")
+        ("ofdmpwr",  value<double>()->default_value(-12),  "OFDM gain in dBFS")
         ("tone",     value<double>()->default_value(0),    "Modulation freqeuncy in Hz.")
         ("duration", value<double>()->default_value(10.0), "Duration of beacon signals in seconds")
         ("cpf",      value<size_t>()->default_value(12),   "Cyclic prefix len: 0...50")
@@ -297,7 +303,7 @@ int main(int argc, char* argv[])
         is_interactive = false;
       }
     else {
-        message = "OE1XTU Das Pferd frisst keinen Gurkensalat.";
+        message = "OE1XDU The quick brown fox jumps over the lazy dog.";
         is_interactive = true;
       }
 
@@ -315,18 +321,22 @@ int main(int argc, char* argv[])
 
     tone = vm["tone"].as<double>();
     duration = vm["duration"].as<double>();
+    sinepwr  = vm["sinepwr"].as<double>();
+    ofdmpwr  = vm["ofdmpwr"].as<double>();
 
     cout << "wrbeacon. Version " PROJECT_VER << endl;
 
     cout << "Parameters:" << endl;
-    cout << format("Freq:       %g MHz\n")     % (1e-6*freq);
-    cout << format("Peak Pwr:   %g dBm\n")     % vm["txpwr"].as<int>();
-    cout << format("Prefix len: %2d\n")        % cpf;
-    cout << format("Samplerate: %g MHz\n")     % (1e-6*sample_rate);
-    cout << format("Phymode:    %2d\n")        % phy_mode;
-    cout << format("Tone: %3.3f kHz\n")        % (1e-3*tone);
-    cout << format("Duration: %.1f s\n")       % duration;
-    cout << format("Message: %s\n")            % message;
+    cout << format("Freq:          %g MHz\n")     % (1e-6*freq);
+    cout << format("FS Sine Pwr:   %g dBm\n")       % vm["txpwr"].as<int>();
+    cout << format("Sine Pwr:      %g dBFS\n")      % sinepwr;
+    cout << format("OFDM Pwr:      %g dBFS\n")      % ofdmpwr;
+    cout << format("Prefix len:    %2d\n")        % cpf;
+    cout << format("Samplerate:    %g MHz\n")     % (1e-6*sample_rate);
+    cout << format("Phymode:       %2d\n")        % phy_mode;
+    cout << format("Tone:          %3.3f kHz\n")        % (1e-3*tone);
+    cout << format("Duration:      %.1f s\n")       % duration;
+    cout << format("Message:       %s\n")            % message;
     cout << endl;
 
     // Try to open devices until one is available or fail if none.
@@ -395,7 +405,7 @@ int main(int argc, char* argv[])
     LMS_EnableChannel(dev,     LMS_CH_TX, 0, true);
     LMS_SetLOFrequency(dev,    LMS_CH_TX, 0, freq);
     LMS_SetAntenna(dev,        LMS_CH_TX, 0, LMS_PATH_TX2);
-    LMS_SetGaindB(dev,         LMS_CH_TX, 0, 61+txpwr);
+    LMS_SetGaindB(dev,         LMS_CH_TX, 0, 58+txpwr);
     LMS_SetGFIRLPF(dev,        LMS_CH_TX, 0, true, 1.86e6);
     LMS_SetLPFBW(dev,          LMS_CH_TX, 0, 5e6);
 

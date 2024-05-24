@@ -40,6 +40,7 @@ public:
 
 class hrframegen : public hrframe {
   ofdmflexframegen fg;
+  float a; // amplitude factor
 
   typedef struct {
     modulation_scheme mod_scheme;
@@ -49,7 +50,7 @@ class hrframegen : public hrframe {
   static const phy_t phy_prop[];
 
 public:
-  hrframegen(double sample_rate,
+  hrframegen(double sample_rate, double gain,
              std::size_t prefix_fraction, std::size_t phy_mode);
   virtual ~hrframegen();
 

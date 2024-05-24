@@ -126,7 +126,7 @@ int main(int argc, char* argv[])
 
     unsigned char header[8] = {0,0,0,0,0,0,0,0};
 
-    hrframegen fg(sample_rate, cpf, phy_mode);
+    hrframegen fg(sample_rate, -12.0, cpf, phy_mode);
     size_t samp_per_frame = sample_rate*hrframegen::frame_len;
 
     vector<complex<float>> tx_buffer(fg.subcarriers + fg.prefix_len);

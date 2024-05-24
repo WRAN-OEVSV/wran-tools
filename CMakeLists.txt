@@ -6,7 +6,7 @@ cmake_minimum_required(VERSION 3.5)
 cmake_policy(VERSION 3.5...3.27)
 
 project(wran-tools
-  VERSION 0.3.0
+  VERSION 0.4.0
   LANGUAGES CXX
 )
 
@@ -52,6 +52,24 @@ target_link_libraries(hrrx-sim
   LiquidDSP
   Boost::system
   Boost::program_options
+)
+
+add_executable(hrdebug)
+
+target_sources(hrdebug PRIVATE
+  hamranfrm.cpp
+  hamranfrm.hpp
+  hrdebug.cpp
+  config.hpp.in
+)
+
+target_link_libraries(hrdebug
+    PRIVATE
+    LiquidDSP
+)
+
+install(TARGETS
+  hrdebug
 )
 
 add_executable(hrbeacon-txrx-sim)

@@ -31,9 +31,6 @@ using std::cout, std::cerr, std::clog, std::cin, std::endl;
 #include <fstream>
 using std::ofstream, std::ios;
 
-#include <filesystem>
-using std::filesystem::path;
-
 #include <stdexcept>
 using std::runtime_error;
 
@@ -69,7 +66,7 @@ const double sample_rate = 4e6;
 size_t   cpf               = 0; // cyclic prefix len, 0 ... prefix_divider
 size_t   phy_mode          = 1; // physical layer mode;
 
-class wrframegen_stats : public hrframegen {
+class hrframegen_stats : public hrframegen {
   uint32_t        seed;
   mt19937         msggen;
   uniform_int_distribution<unsigned short> symbol;
@@ -77,10 +74,10 @@ class wrframegen_stats : public hrframegen {
   vector<uint8_t> msg;
 
 public:
-  wrframegen_stats(double sample_rate,
+  hrframegen_stats(double sample_rate,
                    size_t prefix_fraction, size_t phy_mode,
                    size_t packet_size = 256, uint32_t seed = 230361)
-    : hrframegen(sample_rate, prefix_fraction, phy_mode),
+    : hrframegen(sample_rate, -12.0, prefix_fraction, phy_mode),
       seed(seed), msggen(seed), symbol(0, 255), offset(0), msg(packet_size) {
   }
 
@@ -96,7 +93,7 @@ public:
   }
 };
 
-class wrframesync_stats : public hrframesync {
+class hrframesync_stats : public hrframesync {
   uint32_t        seed;
   mt19937         msggen;
   uniform_int_distribution<unsigned short> symbol;
@@ -108,7 +105,7 @@ public:
   uintmax_t       num_bits_valid;
   uintmax_t       num_payloadbits_valid;
 
-  wrframesync_stats(double sample_rate, std::size_t prefix_fraction, uint32_t seed = 230361)
+  hrframesync_stats(double sample_rate, std::size_t prefix_fraction, uint32_t seed = 230361)
     : hrframesync(sample_rate, prefix_fraction) ,
       seed(seed), msggen(seed), symbol(0, 255), offset(0), num_bytes_valid(0),
       num_bits_valid(0), num_payloadbits_valid(0) {}
@@ -152,10 +149,9 @@ int main(int argc, char* argv[])
     opts.add_options()
         ("help,h", "Print usage information.")
         ("version", "Print version.")
-        ("filename,f", value<path>()->default_value("beacon.cfile"), "Output file name")
         ("cpf",        value<size_t>()->default_value(12), "Cyclic prefix len: 0...50")
         ("phy",        value<size_t>()->default_value(1),  "Physical layer mode: 1 ... 14")
-        ("s,packsiz",  value<size_t>()->default_value(256), "Packet size")
+        ("packsiz,s",  value<size_t>()->default_value(256), "Packet size")
         ;
 
     //auto vm = options.parse(argc, argv);
@@ -186,7 +182,7 @@ int main(int argc, char* argv[])
     size_t packet_size = vm["packsiz"].as<size_t>();
 
     {
-      wrframegen_stats fg(sample_rate, cpf, phy_mode, seed);
+      hrframegen_stats fg(sample_rate, cpf, phy_mode, seed);
 
       cout << "hrsim parameters:" << endl;
       cout << format("    prefix frac         :   %-u\n")    % cpf;
@@ -203,13 +199,11 @@ int main(int argc, char* argv[])
     vector<complex<float>> tx_buffer(512);
     vector<complex<float>> rx_buffer(512);
 
-//    ofstream out(vm["filename"].as<path>(), ios::binary|ios::out);
-
     cout << "     SNR,   frames,  headers,   payval,  bytesrx, bytesval,    bitsval,   samples,     kbps" << endl;
     for (float SNRdB = 0.0; SNRdB < 40.0; SNRdB += 3) {
 
-        wrframegen_stats fg(sample_rate, cpf, phy_mode, packet_size, seed);
-        wrframesync_stats fs(sample_rate, cpf, seed);
+        hrframegen_stats fg(sample_rate, cpf, phy_mode, packet_size, seed);
+        hrframesync_stats fs(sample_rate, cpf, seed);
 
         channel_cccf channel = channel_cccf_create();
         // keep the signal at constant level, but lower the noise fllor

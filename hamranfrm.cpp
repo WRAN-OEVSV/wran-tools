@@ -25,7 +25,7 @@ using namespace std::literals::complex_literals;
 using std::min, std::max, std::minmax, std::clamp;
 
 #include <cmath>
-using std::fmod;
+using std::fmod, std::exp, std::log;
 
 #include <limits>
 using std::numeric_limits;
@@ -109,8 +109,9 @@ hrframe::~hrframe() {
 
 }
 
-hrframegen::hrframegen(double sample_rate, size_t prefix_fraction, size_t phy_mode)
+hrframegen::hrframegen(double sample_rate, double gain, size_t prefix_fraction, size_t phy_mode)
   : hrframe(sample_rate, prefix_fraction) {
+  a = exp(log(10)/20*gain);
 
   ofdmflexframegenprops_s fgp;
   ofdmflexframegenprops_init_default(&fgp);
@@ -139,17 +140,14 @@ bool hrframegen::write(complex<float>* buffer, size_t buffer_len) {
   // Amplitudes > 1.0 overdrive the ADC resulting in splatter.
   // TODO: The optimum scale factor needs to be determined.
   for (size_t i=0; i < buffer_len; ++i) {
+      buffer[i] = complex<float>(clamp(buffer[i].real()*a, -1.0f, 1.0f), clamp(buffer[i].imag()*a, -1.0f, 1.0f));
       sample_max = max(sample_max, abs(buffer[i]));
-      //buffer[i] *= 0.241; //0.3;//0.296;
-      buffer[i] = complex<float>(clamp(buffer[i].real()*0.25f, -1.0f, 1.0f), clamp(buffer[i].imag()*0.25f, -1.0f, 1.0f));
-      //buffer[i] = complex<float>(clamp(buffer[i].real()*2.5f, -1.0f, 1.0f), clamp(buffer[i].imag()*2.5f, -1.0f, 1.0f));
     }
   return (1 == result)?true:false;
 }
 
 hrframegen::~hrframegen() {
   ofdmflexframegen_destroy(fg);
-  //cout << "sample_max = " << sample_max << ", 1/sample_max = " << 1/sample_max << endl;
 }
 
 extern "C" {
