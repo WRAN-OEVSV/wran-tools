@@ -140,8 +140,9 @@ bool hrframegen::write(complex<float>* buffer, size_t buffer_len) {
   // Amplitudes > 1.0 overdrive the ADC resulting in splatter.
   // TODO: The optimum scale factor needs to be determined.
   for (size_t i=0; i < buffer_len; ++i) {
+      sample_max = max(sample_max, max(abs(buffer[i].real()),abs(buffer[i].imag())));
       buffer[i] = complex<float>(clamp(buffer[i].real()*a, -1.0f, 1.0f), clamp(buffer[i].imag()*a, -1.0f, 1.0f));
-      sample_max = max(sample_max, abs(buffer[i]));
+      //buffer[i] *= a;
     }
   return (1 == result)?true:false;
 }

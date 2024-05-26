@@ -50,7 +50,7 @@ keyer::keyer(
     , handicap_(handicap)
     , a_(a)
     , f_s_(f_s)
-    , q_(0.1)//(1.0-exp(-10.0f/(t_unit_*f_s)))
+    , q_(1e-4)//(1.0-exp(-10.0f/(t_unit_*f_s)))
     , o_(exp(2.0i*acos(-1)*double(f_0/f_s)))
     , g_(1.0)
     , x_(conj(o_))

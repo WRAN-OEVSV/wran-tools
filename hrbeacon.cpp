@@ -249,6 +249,7 @@ int main(int argc, char* argv[])
 {
 
   signal(SIGINT, signal_handler); // install handler to catch ctrl-c
+  signal(SIGTERM, signal_handler);
 
   max_LogLevel = lime::LOG_LEVEL_INFO;
   lime::registerLogHandler(&limeSuiteLogHandler);
