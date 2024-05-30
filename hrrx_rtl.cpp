@@ -212,7 +212,7 @@ int main(int argc, char* argv[]) {
           }
       }
 
-    cout << "wrrx-rtl parameters:" << endl;
+    cout << "hrrx-rtl parameters:" << endl;
     cout << format("Freq:       %g MHz\n") % (1e-6*freq);
     cout << format("Prefix len: %2d\n")    % cpf;
     cout << format("Samplerate: %g MHz\n") % (1e-6*sample_rate);
